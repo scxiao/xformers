@@ -514,11 +514,12 @@ if TYPE_CHECKING or _has_triton21():
 
     @functools.lru_cache(None)
     def autotune_kernel(kernel: Callable):
-        BLOCK_M_VALUES = [16, 32]
-        BLOCK_N_VALUES = [32, 64, 128]
+        BLOCK_M_VALUES = [16]
+        BLOCK_N_VALUES = [64]
         # On AMD num_stages has to be 0 or 1, but 0 sometimes produces NaN or incorrect results.
         STAGES_VALUES = [1] if torch.version.hip else [1, 2, 3]
-        WARPS_VALUES = [1, 2, 4]
+        # WARPS_VALUES = [1, 2, 4]
+        WARPS_VALUES = [1]
 
         TRITON_CONFIGS = [
             gen_config(block_m, block_n, stages, warps)
@@ -531,7 +532,12 @@ if TYPE_CHECKING or _has_triton21():
         kernel = triton.autotune(
             configs=TRITON_CONFIGS,
             key=AUTOTUNER_KEY,
+            use_cuda_graph=True,
+            verbose=True,
         )(kernel)
+
+        # print(f"best_config = {kernel.get_best_config()}")
+
         return kernel
 
     # This object contains forward kernels wrapped into autotuner for different number
@@ -946,7 +952,7 @@ class FwOp(AttentionFwOpBase):
     # On AMD these two values are overwritten depending on input shapes, see the code just before the kernel launch
     # This might change once we get autotuning working on AMD
     NUM_STAGES: int = 1
-    NUM_WARPS: int = 2
+    NUM_WARPS: int = 1
 
     @classmethod
     def shape_not_supported_reasons(
@@ -1155,6 +1161,7 @@ class FwOp(AttentionFwOpBase):
 
         # M_ceil = M rounded up to a multiple of MAX_BLOCK_M
         M_ceil = (M + cls.MAX_BLOCK_M - 1) // cls.MAX_BLOCK_M * cls.MAX_BLOCK_M
+        print(f"M_ceil = {M_ceil}, M = {M}")
         IS_SPLITK = split_k > 1  # or cls.autotune?
         output_shape = (B, Mq, G, Hq, Kq)
         if IS_SPLITK:
@@ -1186,9 +1193,11 @@ class FwOp(AttentionFwOpBase):
             return triton.cdiv(M, META["BLOCK_M"]), B * G * H, split_k
 
         split_size = (Mk + split_k - 1) // split_k
+        # print(f"seq_len = {seq_len}")
         use_seq_len = seq_len is not None
 
         num_groups = cls.NUM_GROUPS if PACKED_PER_VAL > 1 else 1
+        print(f"num_groups = {num_groups}")
         if cls.AUTOTUNE:
             kernel = _fwd_kernel_splitK_autotune[num_groups]
             extra_args = {}

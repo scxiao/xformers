@@ -20,17 +20,23 @@ device = torch.device("cuda")
 
 
 CASES = [
-    dict(
-        B=max(1, 2 ** (16 - i)),
-        Mq=1,
-        Mkv=2**i,
-        Hq=16,
-        Hkv=hkv,
-        K=128,
-        attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-    )
-    for i in range(8, 18)
-    for hkv in (1, 2)
+#     dict(
+#         B=max(1, 2 ** (16 - i)),
+#         Mq=1,
+#         Mkv=2**i,
+#         Hq=16,
+#         Hkv=hkv,
+#         K=128,
+#         attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+#     )
+#     for i in range(8, 18)
+#     for hkv in (1, 2)
+# ] + [
+    # dict(B=i, Mq=1, Mkv=8448, Hq=8, Hkv=1, K=128, attn_bias_type=None) for i in [2, 4, 8, 16, 32, 64]
+] + [
+    # dict(B=i, Mq=1, Mkv=8448, Hq=8, Hkv=1, K=128, attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask) for i in [2, 4, 8, 16, 32, 64] 
+    dict(B=i, Mq=1, Mkv=8448, Hq=8, Hkv=1, K=128, attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask) for i in [2] 
+    # dict(B=i, Mq=1, Mkv=8448, Hq=8, Hkv=1, K=128, attn_bias_type=None) for i in [2]
 ]
 
 
@@ -285,19 +291,19 @@ if torch.version.cuda:
     BENCHMARKS["decoder"] = AttentionDecodingDecoder
     BENCHMARKS["cutlass"] = AttentionDecodingCUTLASS
 
-if torch.version.hip:
-    BENCHMARKS.update(
-        {
-            "ck": AttentionDecodingCK,
-            "ck-decoder": AttentionDecodingCKDecoder,
-            "ck_splitK": AttentionDecodingCKSplitKV,
-        }
-    )
+# if torch.version.hip:
+#     BENCHMARKS.update(
+#         {
+#             "ck": AttentionDecodingCK,
+#             "ck-decoder": AttentionDecodingCKDecoder,
+#             "ck_splitK": AttentionDecodingCKSplitKV,
+#         }
+#     )
 
 
 if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
     BENCHMARKS["triton_splitK"] = AttentionDecodingSplitKV
-    BENCHMARKS["triton_int4KV"] = AttentionDecodingSplitInt4KV
+    # BENCHMARKS["triton_int4KV"] = AttentionDecodingSplitInt4KV
 
 try:
     import flash_attn
