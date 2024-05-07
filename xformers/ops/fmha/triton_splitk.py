@@ -1034,13 +1034,22 @@ class FwOp(AttentionFwOpBase):
     @classmethod
     def get_split_k(cls, B: int, G: int, H: int, Mk: int) -> int:
         """Heuristic for the number of splits"""
+        print(f"B = {B}, G = {G}, H = {H}, Mk = {Mk}")
         bh = max(B * H, 1)  # NOTE: Handle B*h=0 case
-        split_k = max(Mk, 1024) // bh
+        split_k = max(Mk + bh - 1, 1024) // bh
         if torch.version.hip:
             max_chunk_size = 64
             split_k_stop_val = 1024 / (B * G * H)
             while split_k > 0 and Mk / (split_k - 1) < max_chunk_size:
                 split_k = split_k - 1
+
+            while split_k > split_k_stop_val:
+                split_k = split_k // 2
+
+            split_size = (Mk + split_k - 1) // split_k
+            chunk_size = split_size // max_chunk_size * max_chunk_size
+            if chunk_size < split_size:
+                split_k += 1
 
             split_k_upper_bound = 512
         else:
@@ -1048,8 +1057,8 @@ class FwOp(AttentionFwOpBase):
             split_k_stop_val = Mk / max_chunk_size
             split_k_upper_bound = 64
 
-        while split_k > split_k_stop_val:
-            split_k = split_k // 2
+            while split_k > split_k_stop_val:
+                split_k = split_k // 2
 
         split_k = min(split_k, split_k_upper_bound)
         split_k = max(split_k, 1)
@@ -1193,11 +1202,15 @@ class FwOp(AttentionFwOpBase):
             return triton.cdiv(M, META["BLOCK_M"]), B * G * H, split_k
 
         split_size = (Mk + split_k - 1) // split_k
+        MK=4097, split_k = 8, split_size = 513
+        MK=4097, split_k = 9, split_size = 513
+
+        # align up to the multiple of 64
+        # split_size = (split_size + 63) // 64 * 64
         # print(f"seq_len = {seq_len}")
         use_seq_len = seq_len is not None
 
         num_groups = cls.NUM_GROUPS if PACKED_PER_VAL > 1 else 1
-        print(f"num_groups = {num_groups}")
         if cls.AUTOTUNE:
             kernel = _fwd_kernel_splitK_autotune[num_groups]
             extra_args = {}
@@ -1223,6 +1236,7 @@ class FwOp(AttentionFwOpBase):
                 "num_warps": num_warps,
                 "num_stages": num_stages,
             }
+        print(f"num_tiles = {B * H * G * split_k}, split_k = {split_k}, split_size = {split_size}")
         kernel[grid](
             Q=q,
             K=k,

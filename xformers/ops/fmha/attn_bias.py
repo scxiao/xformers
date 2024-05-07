@@ -469,7 +469,9 @@ class _PaddedSeqLenInfo(_SeqLenInfo):
             seqlen <= padding for seqlen in seqlens
         ), f"Seqlens {seqlens} Padding {padding}"
         seqstart_py = list(range(0, len(seqlens) * padding + 1, padding))
+        print(f"from_seqlens_padded, seqlens = {seqlens}")
         seqlen = torch.tensor(seqlens, dtype=torch.int32)
+
         return cls(
             seqlen=seqlen,
             seqlen_py=seqlens,
@@ -934,6 +936,7 @@ class BlockDiagonalPaddedKeysMask(AttentionBias):
         )
         q_seqinfo = _SeqLenInfo.from_seqlens(q_seqlen)
         k_seqinfo = _PaddedSeqLenInfo.from_seqlens_padded(kv_seqlen, kv_padding)
+        print(f"q_seqinfo = {q_seqinfo}, k_seqinfo = {k_seqinfo}")
         return cls(q_seqinfo=q_seqinfo, k_seqinfo=k_seqinfo)
 
     def make_paged(

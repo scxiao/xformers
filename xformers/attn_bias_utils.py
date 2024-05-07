@@ -169,7 +169,9 @@ def create_attn_bias(
         fmha.attn_bias.PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
     ]:
         assert fmt in ["BMHK", "BMGHK"]
+        print(f"q_len = {q_len}, kv_len = {kv_len}")
         q, k = _rand_seqlens_padded_k(r, batch_size, q_len, kv_len)
+        print(f"q = {q}, k = {k}")
         block_diag_type = (
             bias_type._UNPAGED_TYPE
             if issubclass(bias_type, fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask)
@@ -294,13 +296,16 @@ def _rand_maxed_partition(
     # returns list of n nonnegative integers less than mx summing to total
     # NB: This is unfortunately biased towards evenly-split bins.
     # If `positive`, outputs are positive
+    print(f"_rand_maxed_partition, n = {n}, mx = {mx}, positive = {positive}")
     if positive:
         total -= n
         mx -= 1
     idxs = r.sample(range(n * mx), total)
     y = torch.zeros(n, mx, dtype=torch.int32)
     y.flatten()[idxs] = 1
+    print(f"y_shape = {y.shape}")
     z = y.sum(1)
+    print(f"z_shape = {z.shape}")
     if positive:
         z += 1
     return z.tolist()
@@ -321,8 +326,11 @@ def _rand_seqlens_padded_k(
         # all key slots are needed so we cannot have padding
         q_seqlens = k_seqlens = [kv_len] * bs
     else:
+        print(f"_rand_seqlens_padded_k, q_len = {q_len}, bs = {bs}, kv_len = {kv_len}")
         q_seqlens = _rand_maxed_partition(r, q_len * bs, bs, kv_len)
+        print(f"q_seqlens = {q_seqlens}")
         k_seqlens = [r.randint(i, kv_len) for i in q_seqlens]
+        print(f"q_seqlens = {q_seqlens}, k_seqlen = {k_seqlens}")
     return q_seqlens, k_seqlens
 
 
