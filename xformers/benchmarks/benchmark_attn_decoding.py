@@ -36,7 +36,7 @@ CASES = [
     # dict(B=i, Mq=1, Mkv=8448, Hq=8, Hkv=1, K=128, attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask) for i in [2] 
 ] + [
     # dict(B=i, Mq=1, Mkv=8448, Hq=8, Hkv=1, K=128, attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask) for i in [2, 4, 8, 16, 32, 64] 
-    dict(B=i, Mq=1, Mkv=4097, Hq=8, Hkv=1, K=128, attn_bias_type=None) for i in [2, 4, 8, 16, 32, 64, 128]
+    dict(B=i, Mq=1, Mkv=4161, Hq=8, Hkv=1, K=128, attn_bias_type=None) for i in [1]
 ]
 
 
@@ -150,6 +150,12 @@ class AttentionDecodingBase:
             not_supported_reasons = self.OP.not_supported_reasons(inp)
             if not_supported_reasons:
                 raise NotSupportedInputError(not_supported_reasons)
+
+    def get_inputs(self):
+        inp = xops.fmha.Inputs(
+            query=self.q, key=self.k, value=self.v, attn_bias=self.attn_bias
+        )
+        return inp
 
     def fw(self) -> None:
         try:
@@ -271,7 +277,6 @@ class AttentionDecodingSplitInt4KV(AttentionDecodingBase):
             if not_supported_reasons:
                 raise NotSupportedInputError(not_supported_reasons)
 
-
 class AttentionDecodingPyTorchRepeat(AttentionDecodingBase):
     def fw(self) -> None:
         B, Mq, Mkv, Hq, Hkv, K = self.shapes
@@ -326,10 +331,29 @@ except ImportError:
     pass
 
 
-benchmark_main_helper2(
-    "attn_decoding",
-    fw=True,
-    cases=CASES,
-    functions=BENCHMARKS,
-    min_run_time=min_run_time,
-)
+# benchmark_main_helper2(
+#     "attn_decoding",
+#     fw=True,
+#     cases=CASES,
+#     functions=BENCHMARKS,
+#     min_run_time=min_run_time,
+# )
+
+def compare_result(cases):
+    for case in cases:
+        print(f"case = {case}")
+        AttentionDecodingPyTorchRepeat
+        baseline = AttentionDecodingPyTorchRepeat(case["B"], case["Mq"], case["Mkv"], case["Hq"],
+                                                   case["Hkv"], case["K"], False, case["attn_bias_type"])
+        output_baseline = baseline.fw()
+        print(f"baseline_output_shape = {output_baseline.shape}")
+
+        triton_splitk = AttentionDecodingSplitKV(case["B"], case["Mq"], case["Mkv"], case["Hq"],
+                                                   case["Hkv"], case["K"], False, case["attn_bias_type"])
+        output_triton,ctx = triton_splitk.OP.apply(baseline.get_inputs(), False)
+        output_triton = output_triton.transpose(2, 1).contiguous()
+        print(f"triton_output_shape = {output_triton.shape}\n")
+        torch.testing.assert_close(output_triton, output_baseline, atol=1e-3, rtol=0)
+
+print("started")
+compare_result(CASES)

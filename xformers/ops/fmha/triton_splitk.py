@@ -107,6 +107,7 @@ if TYPE_CHECKING or _has_triton21():
         N_CTX_Q: tl.constexpr,  # The number of queries
         N_CTX_K: tl.constexpr,
         BLOCK_N_PER_SPLIT: tl.constexpr,
+        # LAST_SPLIT_SIZE: tl.constexpr,
         H: tl.constexpr,
         G: tl.constexpr,
         BLOCK_DMODEL: tl.constexpr,
@@ -202,6 +203,9 @@ if TYPE_CHECKING or _has_triton21():
         else:
             lo = chunk_lo
             hi = tl.minimum(chunk_hi, kv_len)
+            current_block_size = hi - lo
+            # block_n_size = BLOCK_N
+            # block_n_size = tl.minimum(BLOCK_N, block_n_size)
             if Seq_starts is not None:
                 start_kv_idx = tl.load(Seq_starts + off_z)
                 k_base += start_kv_idx * stride_kn
@@ -325,7 +329,6 @@ if TYPE_CHECKING or _has_triton21():
                     block_table + stride_blocktablesl * logical_page_idx
                 ).to(tl.int32)
                 offset = physical_page_idx * PAGE_SIZE + block_offset_in_page * BLOCK_N
-
                 current_block_size = min(hi - start_n, BLOCK_N)
                 K_block_ptr = tl.make_block_ptr(
                     base=k_base + stride_kk * QUANTIZED * N_GROUPS,
@@ -1062,7 +1065,21 @@ class FwOp(AttentionFwOpBase):
 
         split_k = min(split_k, split_k_upper_bound)
         split_k = max(split_k, 1)
-        return split_k
+        return 66
+
+    # @classmethod
+    # def get_split_k(cls, B: int, G: int, H: int, Mk: int) -> int:
+    #     """Heuristic for the number of splits"""
+    #     bh = max(B * H, 1)  # NOTE: Handle B*h=0 case
+    #     split_k = max(Mk, 1024) // bh
+    #     max_chunk_size = 64
+    #     while split_k > 0 and Mk / split_k < max_chunk_size:
+    #         split_k = split_k // 2
+    #     while B * H * G * split_k >= 1024:
+    #         split_k = split_k // 2
+    #     split_k = min(split_k, 512)
+    #     split_k = max(split_k, 1)
+    #     return split_k
 
     @classmethod
     def apply(
@@ -1202,8 +1219,6 @@ class FwOp(AttentionFwOpBase):
             return triton.cdiv(M, META["BLOCK_M"]), B * G * H, split_k
 
         split_size = (Mk + split_k - 1) // split_k
-        MK=4097, split_k = 8, split_size = 513
-        MK=4097, split_k = 9, split_size = 513
 
         # align up to the multiple of 64
         # split_size = (split_size + 63) // 64 * 64
@@ -1222,10 +1237,10 @@ class FwOp(AttentionFwOpBase):
             num_stages = cls.NUM_STAGES
             if torch.version.hip:
                 if B == 1:
-                    num_warps = 4
+                    num_warps = 1
                     num_stages = 1  # TODO num_stages = 0 gives better perf on AMD, but sometimes produces NaNs
                 elif B <= 4 and split_k <= 128:
-                    num_warps = 2
+                    num_warps = 1
                     num_stages = 1
                 else:
                     num_warps = 1
@@ -1236,7 +1251,7 @@ class FwOp(AttentionFwOpBase):
                 "num_warps": num_warps,
                 "num_stages": num_stages,
             }
-        print(f"num_tiles = {B * H * G * split_k}, split_k = {split_k}, split_size = {split_size}")
+        print(f"num_tiles = {B * H * G * split_k}, split_k = {split_k}, split_size = {split_size}, M = {M}")
         kernel[grid](
             Q=q,
             K=k,
