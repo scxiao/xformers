@@ -236,11 +236,11 @@ def _fwd_kernel_splitK(
         # the first element along that dim contains packed quantization coefficients.
         K_block_ptr = tl.make_block_ptr(
             base=k_base + stride_kk * INT4_QUANTIZED * N_GROUPS,
-            shape=(PACKED_D_PER_GROUP, hi),
-            strides=(stride_kk, stride_kn),
-            offsets=(0, lo),
-            block_shape=(PACKED_D_PER_GROUP, BLOCK_N),
-            order=(0, 1),
+            shape=(hi, PACKED_D_PER_GROUP),
+            strides=(stride_kn, stride_kk),
+            offsets=(lo, 0),
+            block_shape=(BLOCK_N, PACKED_D_PER_GROUP),
+            order=(1, 0),
         )
         V_block_ptr = tl.make_block_ptr(
             base=v_base + stride_vk * INT4_QUANTIZED * N_GROUPS,
@@ -280,11 +280,11 @@ def _fwd_kernel_splitK(
                 v_fp8_scale_shift_base += off_z * stride_v_fp8_scale_shift_z
             K_scale_shift_block_ptr = tl.make_block_ptr(
                 base=k_fp8_scale_shift_base,
-                shape=(1, hi),
-                strides=(1, stride_k_fp8_scale_shift_n),
-                offsets=(0, lo),
-                block_shape=(1, BLOCK_N),
-                order=(0, 1),
+                shape=(hi, 1),
+                strides=(stride_k_fp8_scale_shift_n, 1),
+                offsets=(lo, 0),
+                block_shape=(BLOCK_N, 1),
+                order=(1, 0),
             )
             V_scale_shift_block_ptr = tl.make_block_ptr(
                 base=v_fp8_scale_shift_base,
@@ -386,11 +386,11 @@ def _fwd_kernel_splitK(
             current_block_size = min(hi - start_n, BLOCK_N)
             K_block_ptr = tl.make_block_ptr(
                 base=k_base + stride_kk * INT4_QUANTIZED * N_GROUPS,
-                shape=(PACKED_D_PER_GROUP, offset + current_block_size),
-                strides=(stride_kk, stride_kn),
-                offsets=(0, offset),
-                block_shape=(PACKED_D_PER_GROUP, BLOCK_N),
-                order=(0, 1),
+                shape=(offset + current_block_size, PACKED_D_PER_GROUP),
+                strides=(stride_kn, stride_kk),
+                offsets=(offset, 0),
+                block_shape=(BLOCK_N, PACKED_D_PER_GROUP),
+                order=(1, 0),
             )
             V_block_ptr = tl.make_block_ptr(
                 base=v_base + stride_vk * INT4_QUANTIZED * N_GROUPS,
@@ -423,11 +423,11 @@ def _fwd_kernel_splitK(
             elif FP8_QUANTIZED:
                 K_scale_shift_block_ptr = tl.make_block_ptr(
                     base=k_fp8_scale_shift_base,
-                    shape=(1, offset + current_block_size),
-                    strides=(1, stride_k_fp8_scale_shift_n),
-                    offsets=(0, offset),
-                    block_shape=(1, BLOCK_N),
-                    order=(0, 1),
+                    shape=(offset + current_block_size, 1),
+                    strides=(stride_k_fp8_scale_shift_n, 1),
+                    offsets=(offset, 0),
+                    block_shape=(BLOCK_N, 1),
+                    order=(1, 0),
                 )
                 V_scale_shift_block_ptr = tl.make_block_ptr(
                     base=v_fp8_scale_shift_base,
@@ -506,11 +506,11 @@ def _fwd_kernel_splitK(
 
         if not PAGE_SIZE:
             # update pointers
-            K_block_ptr = tl.advance(K_block_ptr, (0, BLOCK_N))
+            K_block_ptr = tl.advance(K_block_ptr, (BLOCK_N, 0))
             V_block_ptr = tl.advance(V_block_ptr, (BLOCK_N, 0))
             if PACKED_PER_VAL > 1:
                 K_scale_shift_block_ptr = tl.advance(
-                    K_scale_shift_block_ptr, (0, BLOCK_N)
+                    K_scale_shift_block_ptr, (BLOCK_N, 0)
                 )
                 V_scale_shift_block_ptr = tl.advance(
                     V_scale_shift_block_ptr, (BLOCK_N, 0)
@@ -671,11 +671,11 @@ def load_dequantize_k_v_group(
     If quantization is group-wise, use group_id to advance the pointers to the current group.
     """
     # Advance to the current quantization group
-    K_block_ptr = tl.advance(K_block_ptr, (PACKED_D_PER_GROUP * group_id, 0))
+    K_block_ptr = tl.advance(K_block_ptr, (0, PACKED_D_PER_GROUP * group_id))
     V_block_ptr = tl.advance(V_block_ptr, (0, PACKED_D_PER_GROUP * group_id))
 
     # -- load k, v --
-    k = tl.load(K_block_ptr, boundary_check=(1,) if BOUNDS_CHECKS_N else ())
+    k = tl.load(K_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ())
     v = tl.load(V_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ())
 
     # If K/V are quantized, load quantization coefficients and dequantize.
@@ -687,13 +687,11 @@ def load_dequantize_k_v_group(
         v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL).to(dtype)
 
         k_scale_shift = tl.load(
-            K_scale_shift_block_ptr, boundary_check=(1,) if BOUNDS_CHECKS_N else ()
+            K_scale_shift_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ()
         )
         k_scale, k_shift = cast_uint32_to_half2(k_scale_shift)
-        k_t = dequantize(
-            tl.trans(k), tl.trans(k_scale), tl.trans(k_shift), PACKED_PER_VAL
-        ).to(dtype)
-        k = tl.trans(k_t)
+        k_t = dequantize(k, k_scale, k_shift, PACKED_PER_VAL).to(dtype)
+        k = k_t
     elif PACKED_PER_VAL > 1:
         # Int4 quantization.
         K_scale_shift_block_ptr = tl.advance(K_scale_shift_block_ptr, (group_id, 0))
@@ -715,7 +713,9 @@ def load_dequantize_k_v_group(
             tl.trans(k_shift),
             PACKED_PER_VAL,
         ).to(dtype)
-        k = tl.trans(k_t)
+        k = k_t
+    k = tl.trans(k)
+
     return k, v
 
 
@@ -724,8 +724,8 @@ def cast_uint32_to_half2(scale_shift):
     """Extract two float16 packed into one int32"""
     scale = scale_shift & 0xFFFF
     shift = scale_shift >> 16
-    scale = scale.to(tl.uint16).to(tl.float16, bitcast=True)
-    shift = shift.to(tl.uint16).to(tl.float16, bitcast=True)
+    scale = scale.to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
+    shift = shift.to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
     return scale, shift
 
 
