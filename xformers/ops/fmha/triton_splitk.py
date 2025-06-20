@@ -544,8 +544,6 @@ class FwOp(AttentionFwOpBase):
             split_k = (
                 cls.get_split_k(B, G, H, Mk, Mq, page_size, is_paged) if attn_bias_tensor is None else 1
             )
-        print(f"B = {B}, G = {G}, H = {H}, Mk = {Mk}, Mq = {Mq}, split_k = {split_k}, page_size = {page_size}")
-
 
         # M_ceil = Mqq rounded up to a multiple of MAX_BLOCK_M
         M_ceil = (Mqq + cls.MAX_BLOCK_M - 1) // cls.MAX_BLOCK_M * cls.MAX_BLOCK_M
@@ -602,7 +600,6 @@ class FwOp(AttentionFwOpBase):
 
         split_size = (Mk + split_k - 1) // split_k
 
-        print(f"split_size = {split_size}, block_num = {B * G * H * split_k}, BLOCK_N = {cls.BLOCK_N}")
         use_seq_len = seq_len is not None
 
         kernel = cls.get_kernel()
@@ -657,7 +654,6 @@ class FwOp(AttentionFwOpBase):
                 "num_warps": num_warps,
                 "num_stages": num_stages,
             }
-        print(f"num_warps = {num_warps}, BLOCK_N = {BLOCK_N}")
         kernel[grid](
             Q=q,
             K=k,
