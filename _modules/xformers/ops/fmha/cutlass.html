@@ -12,7 +12,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>xformers.ops.fmha.cutlass | xFormers 0.0.31 documentation</title>
+  <title>xformers.ops.fmha.cutlass | xFormers 0.0.32 documentation</title>
   
   <script src="../../../../_static/js/ga.js"></script>
   <script src="../../../../_static/js/redirect.js"></script>
@@ -22,7 +22,7 @@
   
   <link rel="canonical" href="https://facebookresearch.github.io/xformers_modules/xformers/ops/fmha/cutlass.html" />
   
-  <meta property="og:title" content="xformers.ops.fmha.cutlass | xFormers 0.0.31 documentation">
+  <meta property="og:title" content="xformers.ops.fmha.cutlass | xFormers 0.0.32 documentation">
   <meta name="description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
   <meta property="og:description" content="API docs for xFormers. xFormers is a PyTorch extension library for composable and optimized Transformer blocks.">
   <!--<meta property="og:image" content="https://mmf.sh/img/logo.png">-->
@@ -242,13 +242,13 @@
     <span class="n">LowerTriangularMaskWithTensorBias</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.common</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">_attn_bias_apply</span><span class="p">,</span>
     <span class="n">AttentionBwOpBase</span><span class="p">,</span>
     <span class="n">AttentionFwOpBase</span><span class="p">,</span>
+    <span class="n">check_lastdim_alignment_stride1</span><span class="p">,</span>
     <span class="n">Context</span><span class="p">,</span>
     <span class="n">Gradients</span><span class="p">,</span>
     <span class="n">Inputs</span><span class="p">,</span>
-    <span class="n">_attn_bias_apply</span><span class="p">,</span>
-    <span class="n">check_lastdim_alignment_stride1</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.torch_attention_compat</span><span class="w"> </span><span class="kn">import</span> <span class="n">is_pt_cutlass_compatible</span>
 
@@ -300,7 +300,7 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_get_tensor_bias</span><span class="p">(</span>
-    <span class="n">attn_bias</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionBias</span><span class="p">]]</span>
+    <span class="n">attn_bias</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionBias</span><span class="p">]],</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">AttentionBiasSubTensor</span><span class="p">):</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">LowerTriangularMaskWithTensorBias</span><span class="p">):</span>
