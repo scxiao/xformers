@@ -706,6 +706,7 @@ class FwOp(AttentionFwOpBase):
             IS_CAUSAL=IS_CAUSAL,
             NUM_QUERIES_CAUSAL=NUM_QUERIES_CAUSAL,
             IS_SPLITK=IS_SPLITK,
+            IS_FP8_PACKED = not (k.dtype in [torch.float8_e4m3fn, torch.float8_e4m3fnuz]),
             SPLIT_K_EARLY_EXIT=cls.SPLIT_K_EARLY_EXIT,
             USE_PAGED_ATTENTION=is_paged,
             PAGE_SIZE=page_size,
