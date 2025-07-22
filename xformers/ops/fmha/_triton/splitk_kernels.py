@@ -729,25 +729,25 @@ def load_dequantize_k_v_group(
             V_scale_shift_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ()
         )
         v_scale, v_shift = cast_uint32_to_float(v_scale_shift)
-        v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL).to(dtype)
+        v = dequantize_packed(v, v_scale, v_shift, PACKED_PER_VAL).to(dtype)
 
         k_scale_shift = tl.load(
             K_scale_shift_block_ptr, boundary_check=(1,) if BOUNDS_CHECKS_N else ()
         )
         k_scale, k_shift = cast_uint32_to_float(k_scale_shift)
-        k = dequantize_k(k, k_scale, k_shift, PACKED_PER_VAL).to(dtype)
+        k = dequantize_k_packed(k, k_scale, k_shift, PACKED_PER_VAL).to(dtype)
     elif FP8_QUANTIZED:
         v_scale_shift = tl.load(
             V_scale_shift_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ()
         )
-        v_scale, v_shift = v_scale_shift.split()
-        v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL).to(dtype)
+        v_scale, v_shift = v_scale_shift.to(tl.float32).split()
+        v = v.to(tl.float32) * v_scale + v_shift
 
         k_scale_shift = tl.load(
             K_scale_shift_block_ptr, boundary_check=(1,) if BOUNDS_CHECKS_N else ()
         )
-        k_scale, k_shift = cast_uint32_to_float(k_scale_shift)
-        k = dequantize_k(k, k_scale, k_shift, PACKED_PER_VAL).to(dtype)
+        k_scale, k_shift = k_scale_shift.to(tl.float32).split()
+        k = k.to(tl.float32) * k_scale + k_shift
     elif PACKED_PER_VAL > 1:
         # Int4 quantization.
         K_scale_shift_block_ptr = tl.advance(K_scale_shift_block_ptr, (group_id, 0))
@@ -762,8 +762,8 @@ def load_dequantize_k_v_group(
 
         k_scale, k_shift = cast_uint32_to_float(k_scale_shift)
         v_scale, v_shift = cast_uint32_to_float(v_scale_shift)
-        v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL).to(dtype)
-        k = dequantize_k(k, k_scale, k_shift, PACKED_PER_VAL).to(dtype)
+        v = dequantize_packed(v, v_scale, v_shift, PACKED_PER_VAL).to(dtype)
+        k = dequantize_k_packed(k, k_scale, k_shift, PACKED_PER_VAL).to(dtype)
 
     return k, v
 
@@ -788,7 +788,7 @@ def cast_uint32_to_float(scale_shift):
 
 
 @triton.jit
-def dequantize_k(
+def dequantize_k_packed(
     x_,
     scale,
     shift,
@@ -831,7 +831,7 @@ def dequantize_k(
 
 
 @triton.jit
-def dequantize(
+def dequantize_packed(
     x_,
     scale,
     shift,
