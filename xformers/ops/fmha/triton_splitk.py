@@ -384,14 +384,23 @@ class FwOp(AttentionFwOpBase):
         v_fp8_scale_shift = inp_.v_fp8_scale_shift
         assert k_fp8_scale_shift is not None
         assert v_fp8_scale_shift is not None
-        if k_fp8_scale_shift.ndim == 3:
-            return k_fp8_scale_shift.unsqueeze(2), v_fp8_scale_shift.unsqueeze(2)
-        if k_fp8_scale_shift.ndim == 4:
+
+        if k_fp8_scale_shift.dtype == torch.int32:
+            if k_fp8_scale_shift.ndim == 3:
+                return k_fp8_scale_shift.unsqueeze(2), v_fp8_scale_shift.unsqueeze(2)
+            if k_fp8_scale_shift.ndim == 4:
+                return k_fp8_scale_shift, v_fp8_scale_shift
+            raise ValueError(
+                "FP8 scales have to be provided in BMH or BMGH format, "
+                f"but got {k_fp8_scale_shift.shape=}"
+            )
+        elif k_fp8_scale_shift.dtype == torch.float16:
             return k_fp8_scale_shift, v_fp8_scale_shift
-        raise ValueError(
-            "FP8 scales have to be provided in BMH or BMGH format, "
-            f"but got {k_fp8_scale_shift.shape=}"
-        )
+        else:
+            raise ValueError(
+                "FP8 scales needs to be either data type fp16 or int32 (packed)"
+            )
+
 
     @classmethod
     def apply(
@@ -406,6 +415,7 @@ class FwOp(AttentionFwOpBase):
         """
 
         k_fp8_scale_shift, v_fp8_scale_shift = cls.get_fp8_scale_shift(inp)
+        IS_FP8_PACKED = (k_fp8_scale_shift is not None) and (k_fp8_scale_shift.dtype == torch.int32)
 
         output_dtype = inp.get_output_dtype()
         if not isinstance(inp.attn_bias, torch.Tensor):
@@ -706,7 +716,7 @@ class FwOp(AttentionFwOpBase):
             IS_CAUSAL=IS_CAUSAL,
             NUM_QUERIES_CAUSAL=NUM_QUERIES_CAUSAL,
             IS_SPLITK=IS_SPLITK,
-            IS_FP8_PACKED = not (k.dtype in [torch.float8_e4m3fn, torch.float8_e4m3fnuz]),
+            IS_FP8_PACKED = IS_FP8_PACKED,
             SPLIT_K_EARLY_EXIT=cls.SPLIT_K_EARLY_EXIT,
             USE_PAGED_ATTENTION=is_paged,
             PAGE_SIZE=page_size,

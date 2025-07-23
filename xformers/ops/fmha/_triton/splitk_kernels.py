@@ -305,11 +305,11 @@ def _fwd_kernel_splitK(
                 v_fp8_scale_shift_base += off_z * stride_v_fp8_scale_shift_z
             K_scale_shift_block_ptr = tl.make_block_ptr(
                 base=k_fp8_scale_shift_base,
-                shape=(2, hi),
-                strides=(1, stride_k_fp8_scale_shift_n),
-                offsets=(0, lo),
-                block_shape=(2, BLOCK_N),
-                order=(0, 1),
+                shape=(hi, 2),
+                strides=(stride_k_fp8_scale_shift_n, 1),
+                offsets=(lo, 0),
+                block_shape=(BLOCK_N, 2),
+                order=(1, 0),
             )
             V_scale_shift_block_ptr = tl.make_block_ptr(
                 base=v_fp8_scale_shift_base,
@@ -466,17 +466,17 @@ def _fwd_kernel_splitK(
             elif FP8_QUANTIZED:
                 K_scale_shift_block_ptr = tl.make_block_ptr(
                     base=k_fp8_scale_shift_base,
-                    shape=(2, offset + current_block_size),
-                    strides=(1, stride_k_fp8_scale_shift_n),
-                    offsets=(0, offset),
-                    block_shape=(2, BLOCK_N),
-                    order=(0, 1),
+                    shape=(offset + current_block_size, 2),
+                    strides=(stride_k_fp8_scale_shift_n, 1),
+                    offsets=(offset, 0),
+                    block_shape=(BLOCK_N, 2),
+                    order=(1, 0),
                 )
                 V_scale_shift_block_ptr = tl.make_block_ptr(
                     base=v_fp8_scale_shift_base,
                     shape=(offset + current_block_size, 2),
                     strides=(stride_v_fp8_scale_shift_n, 1),
-                    offsets=(offset, 2),
+                    offsets=(offset, 0),
                     block_shape=(BLOCK_N, 2),
                     order=(1, 0),
                 )
@@ -737,17 +737,19 @@ def load_dequantize_k_v_group(
         k_scale, k_shift = cast_uint32_to_float(k_scale_shift)
         k = dequantize_k_packed(k, k_scale, k_shift, PACKED_PER_VAL).to(dtype)
     elif FP8_QUANTIZED:
+        k_scale_shift = tl.load(
+            K_scale_shift_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ()
+        )
+        k_scale, k_shift = k_scale_shift.to(tl.float32).split()
+        k = k.to(tl.float32) * k_scale + k_shift
+        k = k.to(dtype)
+
         v_scale_shift = tl.load(
             V_scale_shift_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ()
         )
         v_scale, v_shift = v_scale_shift.to(tl.float32).split()
-        v = v.to(tl.float32) * v_scale + v_shift
-
-        k_scale_shift = tl.load(
-            K_scale_shift_block_ptr, boundary_check=(1,) if BOUNDS_CHECKS_N else ()
-        )
-        k_scale, k_shift = k_scale_shift.to(tl.float32).split()
-        k = k.to(tl.float32) * k_scale + k_shift
+        v = v.to(tl.float32) * v_scale[:, None] + v_shift[:, None]
+        v = v.to(dtype)
     elif PACKED_PER_VAL > 1:
         # Int4 quantization.
         K_scale_shift_block_ptr = tl.advance(K_scale_shift_block_ptr, (group_id, 0))
