@@ -574,6 +574,10 @@ class FwOp(AttentionFwOpBase):
                         else:
                             num_warps = 1
                             BLOCK_N = 64
+                elif B == 128:
+                    num_warps = 1
+                    num_stages = 1
+                    BLOCK_N = 32
                 else:
                     num_warps = 1
                     num_stages = 1
