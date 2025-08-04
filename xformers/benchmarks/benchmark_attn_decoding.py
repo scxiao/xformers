@@ -21,17 +21,30 @@ device = torch.device("cuda")
 
 
 CASES = [
+    # dict(
+    #     B=max(1, 2 ** (16 - i)),
+    #     Mq=1,
+    #     Mkv=2**i,
+    #     Hq=16,
+    #     Hkv=hkv,
+    #     K=128,
+    #     attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    # )
+    # for i in range(8, 18)
+    # for hkv in (1, 2)
+
     dict(
-        B=max(1, 2 ** (16 - i)),
+        B=128,
         Mq=1,
-        Mkv=2**i,
-        Hq=16,
-        Hkv=hkv,
+        Mkv=32769,
+        Hq=8,
+        Hkv=1,
         K=128,
         attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
     )
-    for i in range(8, 18)
-    for hkv in (1, 2)
+    # for i in range(8, 18)
+    # for hkv in (1, 2)
+
 ]
 
 
@@ -350,18 +363,18 @@ BENCHMARKS: Dict[str, Type[AttentionDecodingBase]] = {
 if torch.version.cuda:
     BENCHMARKS["cutlass"] = AttentionDecodingCUTLASS
 
-if torch.version.hip:
-    BENCHMARKS.update(
-        {
-            "ck": AttentionDecodingCK,
-            "ck_splitK": AttentionDecodingCKSplitKV,
-        }
-    )
+# if torch.version.hip:
+#     BENCHMARKS.update(
+#         {
+#             "ck": AttentionDecodingCK,
+#             "ck_splitK": AttentionDecodingCKSplitKV,
+#         }
+#     )
 
 
 if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
     BENCHMARKS["triton_splitK"] = AttentionDecodingSplitKV
-    BENCHMARKS["triton_int4KV"] = AttentionDecodingSplitInt4KV
+    # BENCHMARKS["triton_int4KV"] = AttentionDecodingSplitInt4KV
 
 try:
     import flash_attn
