@@ -145,7 +145,7 @@ class AttentionDecodingBase:
         )
 
         #hard code sequence len to be the same as the
-        seq_len = torch.full((128, ), 8192, dtype=torch.int32, device='cuda')
+        seq_len = torch.full((128, ), 8193, dtype=torch.int32, device='cuda')
         self.attn_bias.k_seqinfo.seqlen = seq_len
         self.attn_bias.k_seqinfo.max_seqlen=8193
 
