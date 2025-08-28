@@ -36,12 +36,12 @@ CASES = [
     dict(
         B=128,
         Mq=1,
-        Mkv=8193,
+        Mkv=32769,
         Hq=8,
         Hkv=1,
         K=128,
-        # attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-        attn_bias_type=None,
+        attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        # attn_bias_type=None,
     )
     # for i in range(8, 18)
     # for hkv in (1, 2)
@@ -143,6 +143,11 @@ class AttentionDecodingBase:
             fmt="BMHK",
             op=self.OP,
         )
+
+        #hard code sequence len to be the same as the
+        seq_len = torch.full((128, ), 8192, dtype=torch.int32, device='cuda')
+        self.attn_bias.k_seqinfo.seqlen = seq_len
+        self.attn_bias.k_seqinfo.max_seqlen=8193
 
         if isinstance(
             self.attn_bias,
