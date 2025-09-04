@@ -774,8 +774,7 @@ class FwOp(AttentionFwOpBase):
             Mk = block_tables.shape[1] * page_size
         elif attn_bias is not None:
             Mk = min(Mk, attn_bias.k_seqinfo.max_seqlen)
-        # hard coded Mk = 8193 to be the same as in the llama 70B Mk values
-        # Mk = 8193
+
         if cls.SPLIT_K is not None:
             split_k = cls.SPLIT_K
         else:
