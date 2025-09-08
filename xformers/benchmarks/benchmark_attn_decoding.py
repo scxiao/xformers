@@ -14,7 +14,9 @@ import torch
 
 import xformers.ops as xops
 from xformers.attn_bias_utils import create_attn_bias
+from xformers.ops.fmha.triton_splitk import InputsFp8
 from xformers.benchmarks.utils import benchmark_main_helper2, NotSupportedInputError
+from xformers.ops.fmha import Inputs, triton_splitk
 
 min_run_time = 0.5
 device = torch.device("cuda")
@@ -168,6 +170,7 @@ class AttentionDecodingBase:
                 raise NotSupportedInputError(not_supported_reasons)
 
     def get_inputs(self):
+        print(f"base, get_inputs()")
         inp = xops.fmha.Inputs(
             query=self.q, key=self.k, value=self.v, attn_bias=self.attn_bias
         )
@@ -353,6 +356,193 @@ class AttentionDecodingSplitInt4KV(AttentionDecodingBase):
                 raise NotSupportedInputError(not_supported_reasons)
 
 
+def quantize_fp8_asymmetric(
+    x: torch.Tensor,
+    pt_fp8_dtype: torch.dtype = torch.float8_e4m3fn,
+):
+    max_fp8 = torch.finfo(pt_fp8_dtype).max
+
+    shift = x.mean(dim=1)
+    x_centered = x - shift[..., None]
+
+    row_max: torch.Tensor = x_centered.abs().max(dim=-1)[0]
+    scale = max_fp8 * row_max.to(torch.float32).pow(-1)
+    scale = torch.nan_to_num(scale, posinf=1)
+
+    x_quant = (x_centered / scale[..., None]).to(pt_fp8_dtype)
+    return x_quant, scale, shift
+
+
+def dequantize_fp8_asymmetric(
+    x: torch.Tensor, scale: torch.Tensor, shift: torch.Tensor
+) -> torch.Tensor:
+    return x.to(scale.dtype) * scale[..., None] + shift[..., None]
+
+
+def quantize_kv_packed_fp8(k: torch.Tensor, num_groups: int = 1) -> torch.Tensor:
+    """
+    Auxiliary fp8 row quantization function used for benchmarking and tests.
+    """
+    # Scale and shift are such that quantization linearly maps int4 values range [0..15]
+    # to input values range min(k)..max(k) individually for every row
+    k = k.reshape(*k.shape[:-1], num_groups, k.shape[-1] // num_groups)
+    # print(f"k_reshape = {k.shape}")
+    max_vals = torch.max(k, dim=-1, keepdim=True).values
+    min_vals = torch.min(k, dim=-1, keepdim=True).values
+    scale_k: torch.Tensor = (max_vals - min_vals) / 15
+    # print(f"scale_k_shape = {scale_k.shape}")
+
+    shift_k = torch.min(k, dim=-1, keepdim=True).values
+    scale_k = scale_k.to(torch.float16)
+    shift_k = shift_k.to(torch.float16)
+    in_bytes = ((k - shift_k.expand(k.shape)) / scale_k.expand(k.shape)) + 0.5
+    in_bytes = in_bytes.to(torch.uint8)
+    in_int4 = in_bytes & 0xF
+    in_int4_packed = in_int4[..., ::2] + (in_int4[..., 1::2] << 4)
+    scale_shift = torch.concat(
+        [scale_k.view(torch.uint8), shift_k.view(torch.uint8)], dim=-1
+    )
+    k_quant = torch.concat(
+        [
+            scale_shift.flatten(start_dim=-2),
+            in_int4_packed.flatten(start_dim=-2),
+        ],
+        dim=-1,
+    ).view(torch.int16)
+    return k_quant
+
+# q is of bf16 and kv are fp8 datatype
+class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
+    OP = xops.fmha.triton_splitk.FwOp
+
+    def __init__(
+        self,
+        B: int,
+        Mq: int,
+        Mkv: int,
+        Hq: int,
+        Hkv: int,
+        K: int,
+        bw: bool,
+        attn_bias_type,
+    ) -> None:
+        dtype = torch.bfloat16
+        torch.manual_seed(10)
+        self.sub_label = (
+            f"B={B} Mq={Mq} Mkv={Mkv} Hq={Hq} Hkv={Hkv} K={K} TotalBytes="
+            f"{((B * Mkv * Hkv * K * 2) + (B * Mq * Hq * K) + (B * Mq * Hq * K))}"
+        )
+        self.label = "attn_decoding"
+        self.shapes = (B, Mq, Mkv, Hq, Hkv, K)
+
+        G = Hq // Hkv
+        max_context_length = Mkv
+
+        assert Hkv <= Hq
+        assert Hq % Hkv == 0
+        # self.q = torch.randn(
+        #     [B, Mq, Hkv, Hq // Hkv, K], device="cuda", dtype=dtype, requires_grad=bw
+        # )
+        # self.k = torch.randn(
+        #     [B, Mkv, Hkv, 1, K], device="cuda", dtype=dtype, requires_grad=bw
+        # )
+        # self.v = torch.randn(
+        #     [B, Mkv, Hkv, 1, K], device="cuda", dtype=dtype, requires_grad=bw
+        # )
+
+        self.q = torch.randn(1, B * Mq, Hkv, G, K, dtype=dtype, device=device)
+        self.k = torch.randn(1, B * max_context_length, Hkv, 1, K, dtype=dtype, device=device)
+        self.v = torch.randn(1, B * max_context_length, Hkv, 1, K, dtype=dtype, device=device)
+
+
+        pt_fp8_dtype = torch.float8_e4m3fnuz
+        k_fp8, k_fp8_scales, k_fp8_shifts = quantize_fp8_asymmetric(
+            self.k.view(-1, K), pt_fp8_dtype=pt_fp8_dtype
+        )
+        v_fp8, v_fp8_scales, v_fp8_shifts = quantize_fp8_asymmetric(
+            self.v.view(-1, K), pt_fp8_dtype=pt_fp8_dtype
+        )
+
+        k_fp8_packed, v_fp8_packed = k_fp8.view(torch.int32), v_fp8.view(torch.int32)
+
+        def _to_expanded_shape(x):
+            return x.view(1, B * max_context_length, Hkv, 1, -1).expand(
+                1, B * max_context_length, Hkv, G, -1
+            )
+
+        def _combine_scale_shift_packed(scale: torch.Tensor, shift: torch.Tensor) -> torch.Tensor:
+            return (
+                torch.concat([scale.unsqueeze(-1), shift.unsqueeze(-1)], dim=-1)
+                .flatten(-2)
+                .to(torch.float16)
+                .view(torch.int32)
+            )
+
+        self.k_fp8_packed = _to_expanded_shape(k_fp8_packed)
+        self.v_fp8_packed = _to_expanded_shape(v_fp8_packed)
+        print(f"k_fp8 = {self.k_fp8_packed.shape}, v_fp8 = {self.v_fp8_packed.shape}, type = {self.v_fp8_packed.dtype}")
+
+        k_fp8_scales_shifts_packed = _combine_scale_shift_packed(k_fp8_scales, k_fp8_shifts)
+        v_fp8_scales_shifts_packed = _combine_scale_shift_packed(v_fp8_scales, v_fp8_shifts)
+
+        self.k_fp8_scales_shifts_packed = (
+            _to_expanded_shape(k_fp8_scales_shifts_packed).squeeze(-1).contiguous()
+        )
+        self.v_fp8_scales_shifts_packed = (
+            _to_expanded_shape(v_fp8_scales_shifts_packed).squeeze(-1).contiguous()
+        )
+
+        # if Hq == Hkv:
+        #     self.q = self.q[:, :, :, 0]
+        #     self.k_fp8_packed = self.k_fp8_packed[:, :, :, 0]
+        #     self.v_fp8_packed = self.v_fp8_packed[:, :, :, 0]
+        # if Hkv == 1:
+        #     self.q = self.q[:, :, 0]
+        #     self.k_fp8_packed = self.k_fp8_packed[:, :, 0]
+        #     self.v_fp8_packed = self.v_fp8_packed[:, :, 0]
+
+        self.attn_bias = create_attn_bias(
+            attn_bias_type,
+            batch_size=B,
+            num_heads=Hq,
+            num_heads_groups=Hq // Hkv,
+            q_len=Mq,
+            kv_len=Mkv,
+            dtype=dtype,
+            device=device,
+            requires_grad=False,
+            fmt="BMHK",
+            op=self.OP,
+        )
+
+        #hard code sequence len to be the same as the
+        prompt_ = 8192
+        # seq_len = torch.full((128, ), 8193, dtype=torch.int32, device='cuda')
+        seq_len = torch.full((128, ), prompt_, dtype=torch.int32, device='cuda')
+        self.attn_bias.k_seqinfo.seqlen = seq_len
+        self.attn_bias.k_seqinfo.max_seqlen=prompt_
+
+    def get_inputs(self):
+        print(f"get_inputs, q = {self.q.shape}, k = {self.k_fp8_packed.shape}")
+        inp = InputsFp8(
+            query=self.q,
+            key=self.k_fp8_packed,
+            value=self.v_fp8_packed,
+            k_fp8_scale_shift=self.k_fp8_scales_shifts_packed,
+            v_fp8_scale_shift=self.v_fp8_scales_shifts_packed,
+            attn_bias=self.attn_bias,
+        )
+        return inp
+
+    def fw(self) -> None:
+        try:
+            xops.fmha._memory_efficient_attention_forward(
+                self.get_inputs(), op=xops.fmha.triton_splitk.FwOp
+            )
+        except (RuntimeError, ValueError) as e:
+            print(f"Runtime error: {e}")
+
+
 class AttentionDecodingPyTorchRepeat(AttentionDecodingBase):
     def fw(self) -> None:
         B, Mq, Mkv, Hq, Hkv, K = self.shapes
@@ -371,17 +561,11 @@ BENCHMARKS: Dict[str, Type[AttentionDecodingBase]] = {
 if torch.version.cuda:
     BENCHMARKS["cutlass"] = AttentionDecodingCUTLASS
 
-# if torch.version.hip:
-#     BENCHMARKS.update(
-#         {
-#             "ck": AttentionDecodingCK,
-#             "ck_splitK": AttentionDecodingCKSplitKV,
-#         }
-#     )
 
 
 if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
     BENCHMARKS["triton_splitK"] = AttentionDecodingSplitKV
+    BENCHMARKS["triton_splitK_fp8"] = AttentionDecodingSplitPackedFp8KV
     # BENCHMARKS["triton_int4KV"] = AttentionDecodingSplitInt4KV
 
 try:
