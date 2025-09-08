@@ -480,7 +480,6 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
 
         self.k_fp8_packed = _to_expanded_shape(k_fp8_packed)
         self.v_fp8_packed = _to_expanded_shape(v_fp8_packed)
-        print(f"k_fp8 = {self.k_fp8_packed.shape}, v_fp8 = {self.v_fp8_packed.shape}, type = {self.v_fp8_packed.dtype}")
 
         k_fp8_scales_shifts_packed = _combine_scale_shift_packed(k_fp8_scales, k_fp8_shifts)
         v_fp8_scales_shifts_packed = _combine_scale_shift_packed(v_fp8_scales, v_fp8_shifts)
@@ -523,7 +522,6 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
         self.attn_bias.k_seqinfo.max_seqlen=prompt_
 
     def get_inputs(self):
-        print(f"get_inputs, q = {self.q.shape}, k = {self.k_fp8_packed.shape}")
         inp = InputsFp8(
             query=self.q,
             key=self.k_fp8_packed,
