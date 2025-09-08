@@ -440,15 +440,6 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
 
         assert Hkv <= Hq
         assert Hq % Hkv == 0
-        # self.q = torch.randn(
-        #     [B, Mq, Hkv, Hq // Hkv, K], device="cuda", dtype=dtype, requires_grad=bw
-        # )
-        # self.k = torch.randn(
-        #     [B, Mkv, Hkv, 1, K], device="cuda", dtype=dtype, requires_grad=bw
-        # )
-        # self.v = torch.randn(
-        #     [B, Mkv, Hkv, 1, K], device="cuda", dtype=dtype, requires_grad=bw
-        # )
 
         self.q = torch.randn(1, B * Mq, Hkv, G, K, dtype=dtype, device=device)
         self.k = torch.randn(1, B * max_context_length, Hkv, 1, K, dtype=dtype, device=device)
@@ -490,15 +481,6 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
         self.v_fp8_scales_shifts_packed = (
             _to_expanded_shape(v_fp8_scales_shifts_packed).squeeze(-1).contiguous()
         )
-
-        # if Hq == Hkv:
-        #     self.q = self.q[:, :, :, 0]
-        #     self.k_fp8_packed = self.k_fp8_packed[:, :, :, 0]
-        #     self.v_fp8_packed = self.v_fp8_packed[:, :, :, 0]
-        # if Hkv == 1:
-        #     self.q = self.q[:, :, 0]
-        #     self.k_fp8_packed = self.k_fp8_packed[:, :, 0]
-        #     self.v_fp8_packed = self.v_fp8_packed[:, :, 0]
 
         self.attn_bias = create_attn_bias(
             attn_bias_type,
