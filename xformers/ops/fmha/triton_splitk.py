@@ -861,7 +861,7 @@ class FwOp(AttentionFwOpBase):
             IS_TRITON_UPGRADE = triton.__version__ == "3.3.1+fb"
         else:
             IS_TRITON_UPGRADE = False
-        IS_HIP = IS_TRITON_UPGRADE and torch.version.hip is not None
+        IS_HIP = torch.version.hip is not None
         kernel[grid](
             Q=q,
             K=k,
