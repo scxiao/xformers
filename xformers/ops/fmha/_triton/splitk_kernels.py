@@ -552,7 +552,7 @@ def _fwd_kernel_splitK(
             # update pointers
             K_block_ptr = tl.advance(K_block_ptr, (0, BLOCK_N))
             V_block_ptr = tl.advance(V_block_ptr, (BLOCK_N, 0))
-            if PACKED_PER_VAL > 1:
+            if PACKED_PER_VAL > 1 or (FP8_QUANTIZED and (not IS_FP8_PACKED)):
                 K_scale_shift_block_ptr = tl.advance(
                     K_scale_shift_block_ptr, (0, BLOCK_N)
                 )
