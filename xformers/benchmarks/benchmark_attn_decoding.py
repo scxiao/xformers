@@ -100,7 +100,7 @@ class AttentionDecodingBase:
         bw: bool,
         attn_bias_type,
     ) -> None:
-        dtype = torch.float16
+        dtype = torch.bfloat16
         torch.manual_seed(10)
         self.sub_label = (
             f"B={B} Mq={Mq} Mkv={Mkv} Hq={Hq} Hkv={Hkv} K={K} TotalBytes="
