@@ -110,6 +110,34 @@ def _fwd_kernel_splitK(
     WRITE_LSE: tl.constexpr,
     HAS_ADDITIVE_BIAS: tl.constexpr,
 ):
+    
+    tl.assume(stride_qz > 0)
+    tl.assume(stride_qm > 0)
+    tl.assume(stride_qg > 0)
+    tl.assume(stride_qh > 0)
+    tl.assume(stride_qk > 0)
+    tl.assume(stride_kz > 0)
+    tl.assume(stride_kn > 0)
+    tl.assume(stride_kg > 0)
+    tl.assume(stride_kh > 0)
+    tl.assume(stride_kk > 0)
+    tl.assume(stride_vz > 0)
+    tl.assume(stride_vn > 0)
+    tl.assume(stride_vg > 0)
+    tl.assume(stride_vh > 0)
+    tl.assume(stride_vk > 0)
+    tl.assume(stride_osk_z > 0)
+    tl.assume(stride_osk_g > 0)
+    tl.assume(stride_osk_h > 0)
+    tl.assume(stride_osk_s > 0)
+    tl.assume(stride_osk_m > 0)
+    tl.assume(stride_osk_k > 0)
+    tl.assume(stride_lsek_z > 0)
+    tl.assume(stride_lsek_g > 0)
+    tl.assume(stride_lsek_h > 0)
+    tl.assume(stride_lsek_s > 0)
+    tl.assume(stride_lsek_m > 0)
+        
     """This kernel can accept non-quantized or int4-quantized keys/values.
     PACKED_PER_VAL determines the quantization type:
         - PACKED_PER_VAL == 1 means no quantization
