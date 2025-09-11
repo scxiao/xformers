@@ -815,7 +815,7 @@ def dequantize_k_packed(
 
     if PACKED_PER_VAL == 4:
         # FP8 quantization.
-        fp8_type = tl.float8e4b8 if torch.version.hip is not None else tl.float8e4nv
+        fp8_type = tl.float8e4b8 if (torch.version.hip is not None and triton.runtime.driver.active.get_current_target().arch == 'gfx942') else tl.float8e4nv
         dequant = (
             quant_offset.to(tl.uint8).to(fp8_type, bitcast=True).to(scale.dtype) * scale
             + shift
@@ -857,7 +857,7 @@ def dequantize_packed(
     )
     if PACKED_PER_VAL == 4:
         # FP8 quantization.
-        fp8_type = tl.float8e4b8 if torch.version.hip is not None else tl.float8e4nv
+        fp8_type = tl.float8e4b8 if (torch.version.hip is not None and triton.runtime.driver.active.get_current_target().arch == 'gfx942') else tl.float8e4nv
         dequant = (
             quant_offset.to(tl.uint8).to(fp8_type, bitcast=True).to(scale.dtype) * scale
             + shift
