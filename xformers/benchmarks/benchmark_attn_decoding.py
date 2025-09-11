@@ -446,7 +446,7 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
         self.v = torch.randn(1, B * max_context_length, Hkv, 1, K, dtype=dtype, device=device)
 
 
-        pt_fp8_dtype = torch.float8_e4m3fnuz
+        pt_fp8_dtype = torch.float8_e4m3fn
         k_fp8, k_fp8_scales, k_fp8_shifts = quantize_fp8_asymmetric(
             self.k.view(-1, K), pt_fp8_dtype=pt_fp8_dtype
         )
