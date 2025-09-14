@@ -21,6 +21,8 @@ from xformers.ops.fmha import Inputs, triton_splitk
 min_run_time = 0.5
 device = torch.device("cuda")
 
+prompt_ = 8193
+
 
 CASES = [
     # dict(
@@ -147,7 +149,6 @@ class AttentionDecodingBase:
         )
 
         #hard code sequence len to be the same as the
-        prompt_ = 8192
         # seq_len = torch.full((128, ), 8193, dtype=torch.int32, device='cuda')
         seq_len = torch.full((128, ), prompt_, dtype=torch.int32, device='cuda')
         self.attn_bias.k_seqinfo.seqlen = seq_len
@@ -497,7 +498,6 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
         )
 
         #hard code sequence len to be the same as the
-        prompt_ = 8192
         # seq_len = torch.full((128, ), 8193, dtype=torch.int32, device='cuda')
         seq_len = torch.full((128, ), prompt_, dtype=torch.int32, device='cuda')
         self.attn_bias.k_seqinfo.seqlen = seq_len
