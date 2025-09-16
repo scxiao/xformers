@@ -866,7 +866,7 @@ class FwOp(AttentionFwOpBase):
 
         # print(f"B = {B}, H = {H}, G = {G}, split_k = {split_k}, split_size = {split_size}")
         # print(f"extra_args = {extra_args}")
-
+        run_attn = False
         kernel[grid](
             Q=q,
             K=k,
@@ -891,6 +891,7 @@ class FwOp(AttentionFwOpBase):
             **_strides(
                 attn_bias_tensor, "bias_b", "bias_g", "bias_h", "bias_qm", "bias_km"
             ),
+            run_attn=run_attn,
             **_strides(
                 k_fp8_scale_shift,
                 "k_fp8_scale_shift_z",

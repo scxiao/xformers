@@ -76,6 +76,7 @@ def _fwd_kernel_splitK(
     stride_bias_h,
     stride_bias_qm,
     stride_bias_km,
+    run_attn,
     stride_k_fp8_scale_shift_z: tl.constexpr,
     stride_k_fp8_scale_shift_n: tl.constexpr,
     stride_k_fp8_scale_shift_g: tl.constexpr,
@@ -500,63 +501,64 @@ def _fwd_kernel_splitK(
 
         # -- compute qk ---
         qk = tl.zeros([BLOCK_M, BLOCK_N], dtype=tl.float32)
-        for i in range(len(acc)):  # noqa: F821
-            qk += tl.dot(q[i], k[i])  # noqa: F821
-        qk *= qk_scale
+        if run_attn:
+            for i in range(len(acc)):  # noqa: F821
+                qk += tl.dot(q[i], k[i])  # noqa: F821
+            qk *= qk_scale
 
-        if start_n == lo and ignore_in_first_block > 0:
-            qk = tl.where(
-                tl.arange(0, BLOCK_N) < ignore_in_first_block, float("-inf"), qk
-            )
-
-        if HAS_ADDITIVE_BIAS:
-            loaded_bias = tl.load(
-                additive_bias_block_ptr,
-                boundary_check=(0, 1) if BOUNDS_CHECKS_N else (0,),
-            )
-            qk += loaded_bias.to(tl.float32) * log2e
-            additive_bias_block_ptr = tl.advance(additive_bias_block_ptr, (0, BLOCK_N))
-
-        # TODO: This is slow, and only needed at the last iteration.
-        # Maybe we can unroll the last iteration instead?
-        if BOUNDS_CHECKS_N:
-            qk = tl.where(tl.arange(0, BLOCK_N) < hi - start_n, qk, float("-inf"))
-        if IS_CAUSAL:
-            # -- apply the causal mask --
-            qk = tl.where(diag_idx_shifted >= start_n - start_kv_idx, qk, float("-inf"))
-        if IS_LOCAL:
-            # -- apply the local window size mask --
-            qk = tl.where(
-                diag_idx_shifted < start_n - start_kv_idx + WINDOW_LEFT + 1,
-                qk,
-                float("-inf"),
-            )
-            if not IS_CAUSAL and WINDOW_RIGHT >= 0:
+            if start_n == lo and ignore_in_first_block > 0:
                 qk = tl.where(
-                    diag_idx_shifted >= start_n - start_kv_idx - WINDOW_RIGHT,
+                    tl.arange(0, BLOCK_N) < ignore_in_first_block, float("-inf"), qk
+                )
+
+            if HAS_ADDITIVE_BIAS:
+                loaded_bias = tl.load(
+                    additive_bias_block_ptr,
+                    boundary_check=(0, 1) if BOUNDS_CHECKS_N else (0,),
+                )
+                qk += loaded_bias.to(tl.float32) * log2e
+                additive_bias_block_ptr = tl.advance(additive_bias_block_ptr, (0, BLOCK_N))
+
+            # TODO: This is slow, and only needed at the last iteration.
+            # Maybe we can unroll the last iteration instead?
+            if BOUNDS_CHECKS_N:
+                qk = tl.where(tl.arange(0, BLOCK_N) < hi - start_n, qk, float("-inf"))
+            if IS_CAUSAL:
+                # -- apply the causal mask --
+                qk = tl.where(diag_idx_shifted >= start_n - start_kv_idx, qk, float("-inf"))
+            if IS_LOCAL:
+                # -- apply the local window size mask --
+                qk = tl.where(
+                    diag_idx_shifted < start_n - start_kv_idx + WINDOW_LEFT + 1,
                     qk,
                     float("-inf"),
                 )
+                if not IS_CAUSAL and WINDOW_RIGHT >= 0:
+                    qk = tl.where(
+                        diag_idx_shifted >= start_n - start_kv_idx - WINDOW_RIGHT,
+                        qk,
+                        float("-inf"),
+                    )
 
-        # -- compute scaling constant ---
-        m_i_new = tl.maximum(m_i, tl.max(qk, 1))
-        alpha = tl.math.exp2(m_i - m_i_new)
-        p = tl.math.exp2(qk - m_i_new[:, None])
-        if HAS_ADDITIVE_BIAS or (IS_CAUSAL or IS_LOCAL):
-            # NOTE: It's possible that an entire block is masked out.
-            # if this is the case, `m_i_new=nan` and everything becomes nan
-            alpha = tl.where(m_i_new == float("-inf"), 0, alpha)
-            p = tl.where(m_i_new[:, None] == float("-inf"), 0, p)
+            # -- compute scaling constant ---
+            m_i_new = tl.maximum(m_i, tl.max(qk, 1))
+            alpha = tl.math.exp2(m_i - m_i_new)
+            p = tl.math.exp2(qk - m_i_new[:, None])
+            if HAS_ADDITIVE_BIAS or (IS_CAUSAL or IS_LOCAL):
+                # NOTE: It's possible that an entire block is masked out.
+                # if this is the case, `m_i_new=nan` and everything becomes nan
+                alpha = tl.where(m_i_new == float("-inf"), 0, alpha)
+                p = tl.where(m_i_new[:, None] == float("-inf"), 0, p)
 
-        # -- update m_i and l_i --
-        l_i = l_i * alpha + tl.sum(p, 1)
-        m_i = m_i_new
-        p = p.to(Q.dtype.element_ty)
+            # -- update m_i and l_i --
+            l_i = l_i * alpha + tl.sum(p, 1)
+            m_i = m_i_new
+            p = p.to(Q.dtype.element_ty)
 
-        # -- scale and update acc --
-        for i in range(len(acc)):  # noqa: F821
-            acc[i] *= alpha[:, None]  # noqa: F821
-            acc[i] += tl.dot(p, v[i])  # noqa: F821
+            # -- scale and update acc --
+            for i in range(len(acc)):  # noqa: F821
+                acc[i] *= alpha[:, None]  # noqa: F821
+                acc[i] += tl.dot(p, v[i])  # noqa: F821
 
         if not PAGE_SIZE:
             # update pointers
