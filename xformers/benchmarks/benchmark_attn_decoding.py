@@ -455,6 +455,120 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
             self.v.view(-1, K), pt_fp8_dtype=pt_fp8_dtype
         )
 
+        k_fp8_scales = k_fp8_scales.to(torch.float16)
+        v_fp8_scales = v_fp8_scales.to(torch.float16)
+        k_fp8_shifts = k_fp8_shifts.to(torch.float16)
+        v_fp8_shifts = v_fp8_shifts.to(torch.float16)
+
+        def _combine_scale_shift(scale: torch.Tensor, shift: torch.Tensor) -> torch.Tensor:
+            return (
+                torch.concat([scale.unsqueeze(-1), shift.unsqueeze(-1)], dim=-1)
+                .flatten(-2)
+                .to(torch.float16)
+            )
+
+        # for fp8 direct input. kv are of the fp8 data type, while scale and shift are of
+        # fp16 data type, and concated as one input
+        k_fp8_scales_shifts = _combine_scale_shift(k_fp8_scales, k_fp8_shifts)
+        v_fp8_scales_shifts = _combine_scale_shift(v_fp8_scales, v_fp8_shifts)
+
+
+        def _to_expanded_shape(x):
+            return x.view(1, B * max_context_length, Hkv, 1, -1).expand(
+                1, B * max_context_length, Hkv, G, -1
+            )
+
+        self.k_fp8_scales_shifts = (
+            _to_expanded_shape(k_fp8_scales_shifts).squeeze(-1).contiguous()
+        )
+        self.v_fp8_scales_shifts = (
+            _to_expanded_shape(v_fp8_scales_shifts).squeeze(-1).contiguous()
+        )
+        self.k_fp8 = _to_expanded_shape(k_fp8)
+        self.v_fp8 = _to_expanded_shape(v_fp8)
+
+        self.attn_bias = create_attn_bias(
+            attn_bias_type,
+            batch_size=B,
+            num_heads=Hq,
+            num_heads_groups=Hq // Hkv,
+            q_len=Mq,
+            kv_len=Mkv,
+            dtype=dtype,
+            device=device,
+            requires_grad=False,
+            fmt="BMHK",
+            op=self.OP,
+        )
+
+        #hard code sequence len to be the same as the
+        # seq_len = torch.full((128, ), 8193, dtype=torch.int32, device='cuda')
+        seq_len = torch.full((128, ), prompt_, dtype=torch.int32, device='cuda')
+        self.attn_bias.k_seqinfo.seqlen = seq_len
+        self.attn_bias.k_seqinfo.max_seqlen=prompt_
+
+    def get_inputs(self):
+        inp = InputsFp8(
+            query=self.q,
+            key=self.k_fp8,
+            value=self.v_fp8,
+            k_fp8_scale_shift=self.k_fp8_scales_shifts,
+            v_fp8_scale_shift=self.v_fp8_scales_shifts,
+            attn_bias=self.attn_bias,
+        )
+        return inp
+
+    def fw(self) -> None:
+        try:
+            xops.fmha._memory_efficient_attention_forward(
+                self.get_inputs(), op=xops.fmha.triton_splitk.FwOp
+            )
+        except (RuntimeError, ValueError) as e:
+            print(f"Runtime error: {e}")
+
+
+class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
+    OP = xops.fmha.triton_splitk.FwOp
+
+    def __init__(
+        self,
+        B: int,
+        Mq: int,
+        Mkv: int,
+        Hq: int,
+        Hkv: int,
+        K: int,
+        bw: bool,
+        attn_bias_type,
+    ) -> None:
+        dtype = torch.bfloat16
+        torch.manual_seed(10)
+        self.sub_label = (
+            f"B={B} Mq={Mq} Mkv={Mkv} Hq={Hq} Hkv={Hkv} K={K} TotalBytes="
+            f"{((B * Mkv * Hkv * K * 2) + (B * Mq * Hq * K) + (B * Mq * Hq * K))}"
+        )
+        self.label = "attn_decoding"
+        self.shapes = (B, Mq, Mkv, Hq, Hkv, K)
+
+        G = Hq // Hkv
+        max_context_length = Mkv
+
+        assert Hkv <= Hq
+        assert Hq % Hkv == 0
+
+        self.q = torch.randn(1, B * Mq, Hkv, G, K, dtype=dtype, device=device)
+        self.k = torch.randn(1, B * max_context_length, Hkv, 1, K, dtype=dtype, device=device)
+        self.v = torch.randn(1, B * max_context_length, Hkv, 1, K, dtype=dtype, device=device)
+
+
+        pt_fp8_dtype = torch.float8_e4m3fn
+        k_fp8, k_fp8_scales, k_fp8_shifts = quantize_fp8_asymmetric(
+            self.k.view(-1, K), pt_fp8_dtype=pt_fp8_dtype
+        )
+        v_fp8, v_fp8_scales, v_fp8_shifts = quantize_fp8_asymmetric(
+            self.v.view(-1, K), pt_fp8_dtype=pt_fp8_dtype
+        )
+
         k_fp8_packed, v_fp8_packed = k_fp8.view(torch.int32), v_fp8.view(torch.int32)
 
         def _to_expanded_shape(x):
@@ -544,8 +658,9 @@ if torch.version.cuda:
 
 
 if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
-    BENCHMARKS["triton_splitK"] = AttentionDecodingSplitKV
-    BENCHMARKS["triton_splitK_fp8"] = AttentionDecodingSplitPackedFp8KV
+    BENCHMARKS["bf16"] = AttentionDecodingSplitKV
+    BENCHMARKS["packed_fp8"] = AttentionDecodingSplitPackedFp8KV
+    BENCHMARKS["fp8"] = AttentionDecodingSplitFp8KV
     # BENCHMARKS["triton_int4KV"] = AttentionDecodingSplitInt4KV
 
 try:
