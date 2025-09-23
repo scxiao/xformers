@@ -413,7 +413,7 @@ def quantize_kv_packed_fp8(k: torch.Tensor, num_groups: int = 1) -> torch.Tensor
     return k_quant
 
 # q is of bf16 and kv are fp8 datatype
-class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
+class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
     OP = xops.fmha.triton_splitk.FwOp
 
     def __init__(
@@ -527,7 +527,7 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
             print(f"Runtime error: {e}")
 
 
-class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
+class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
     OP = xops.fmha.triton_splitk.FwOp
 
     def __init__(
@@ -658,8 +658,8 @@ if torch.version.cuda:
 
 
 if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
-    BENCHMARKS["bf16"] = AttentionDecodingSplitKV
-    BENCHMARKS["packed_fp8"] = AttentionDecodingSplitPackedFp8KV
+    # BENCHMARKS["bf16"] = AttentionDecodingSplitKV
+    # BENCHMARKS["packed_fp8"] = AttentionDecodingSplitPackedFp8KV
     BENCHMARKS["fp8"] = AttentionDecodingSplitFp8KV
     # BENCHMARKS["triton_int4KV"] = AttentionDecodingSplitInt4KV
 
