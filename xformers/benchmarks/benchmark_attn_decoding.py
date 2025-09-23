@@ -85,11 +85,9 @@ def quantize_kv_int4(k: torch.Tensor, num_groups: int = 1) -> torch.Tensor:
     # Scale and shift are such that quantization linearly maps int4 values range [0..15]
     # to input values range min(k)..max(k) individually for every row
     k = k.reshape(*k.shape[:-1], num_groups, k.shape[-1] // num_groups)
-    # print(f"k_reshape = {k.shape}")
     max_vals = torch.max(k, dim=-1, keepdim=True).values
     min_vals = torch.min(k, dim=-1, keepdim=True).values
     scale_k: torch.Tensor = (max_vals - min_vals) / 15
-    # print(f"scale_k_shape = {scale_k.shape}")
 
     shift_k = torch.min(k, dim=-1, keepdim=True).values
     scale_k = scale_k.to(torch.float16)
@@ -193,7 +191,6 @@ class AttentionDecodingBase:
                 raise NotSupportedInputError(not_supported_reasons)
 
     def get_inputs(self):
-        print(f"base, get_inputs()")
         inp = xops.fmha.Inputs(
             query=self.q, key=self.k, value=self.v, attn_bias=self.attn_bias
         )
@@ -409,11 +406,9 @@ def quantize_kv_packed_fp8(k: torch.Tensor, num_groups: int = 1) -> torch.Tensor
     # Scale and shift are such that quantization linearly maps int4 values range [0..15]
     # to input values range min(k)..max(k) individually for every row
     k = k.reshape(*k.shape[:-1], num_groups, k.shape[-1] // num_groups)
-    # print(f"k_reshape = {k.shape}")
     max_vals = torch.max(k, dim=-1, keepdim=True).values
     min_vals = torch.min(k, dim=-1, keepdim=True).values
     scale_k: torch.Tensor = (max_vals - min_vals) / 15
-    # print(f"scale_k_shape = {scale_k.shape}")
 
     shift_k = torch.min(k, dim=-1, keepdim=True).values
     scale_k = scale_k.to(torch.float16)
@@ -477,9 +472,6 @@ class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
             self.v.view(-1, K), pt_fp8_dtype=pt_fp8_dtype
         )
 
-        print(f"non-packed, k_scales = {k_fp8_scales}")
-        print(f"non-packed, v_shifts = {v_fp8_shifts}")
-
         k_fp8_scales = k_fp8_scales.to(torch.float16)
         v_fp8_scales = v_fp8_scales.to(torch.float16)
         k_fp8_shifts = k_fp8_shifts.to(torch.float16)
@@ -496,9 +488,6 @@ class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
         # fp16 data type, and concated as one input
         k_fp8_scales_shifts = _combine_scale_shift(k_fp8_scales, k_fp8_shifts)
         v_fp8_scales_shifts = _combine_scale_shift(v_fp8_scales, v_fp8_shifts)
-
-        print(f"non-packed, k_scale_shape = {k_fp8_scales_shifts.shape}")
-
 
         def _to_expanded_shape(x):
             return x.view(1, B * max_context_length, Hkv, 1, -1).expand(
@@ -597,9 +586,6 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
             self.v.view(-1, K), pt_fp8_dtype=pt_fp8_dtype
         )
 
-        print(f"packed, k_scales = {k_fp8_scales}")
-        print(f"packed, v_shifts = {v_fp8_shifts}")
-
         k_fp8_packed, v_fp8_packed = k_fp8.view(torch.int32), v_fp8.view(torch.int32)
 
         def _to_expanded_shape(x):
@@ -620,8 +606,6 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
 
         k_fp8_scales_shifts_packed = _combine_scale_shift_packed(k_fp8_scales, k_fp8_shifts)
         v_fp8_scales_shifts_packed = _combine_scale_shift_packed(v_fp8_scales, v_fp8_shifts)
-
-        print(f"packed, k_scale_shape = {k_fp8_scales_shifts_packed.shape}")
 
         self.k_fp8_scales_shifts_packed = (
             _to_expanded_shape(k_fp8_scales_shifts_packed).squeeze(-1).contiguous()
