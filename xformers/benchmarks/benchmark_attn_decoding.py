@@ -455,6 +455,9 @@ class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
             self.v.view(-1, K), pt_fp8_dtype=pt_fp8_dtype
         )
 
+        print(f"non-packed, k_scales = {k_fp8_scales}")
+        print(f"non-packed, v_shifts = {v_fp8_shifts}")
+
         k_fp8_scales = k_fp8_scales.to(torch.float16)
         v_fp8_scales = v_fp8_scales.to(torch.float16)
         k_fp8_shifts = k_fp8_shifts.to(torch.float16)
@@ -560,7 +563,6 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
         self.k = torch.randn(1, B * max_context_length, Hkv, 1, K, dtype=dtype, device=device)
         self.v = torch.randn(1, B * max_context_length, Hkv, 1, K, dtype=dtype, device=device)
 
-
         pt_fp8_dtype = torch.float8_e4m3fn
         k_fp8, k_fp8_scales, k_fp8_shifts = quantize_fp8_asymmetric(
             self.k.view(-1, K), pt_fp8_dtype=pt_fp8_dtype
@@ -568,6 +570,9 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
         v_fp8, v_fp8_scales, v_fp8_shifts = quantize_fp8_asymmetric(
             self.v.view(-1, K), pt_fp8_dtype=pt_fp8_dtype
         )
+
+        print(f"packed, k_scales = {k_fp8_scales}")
+        print(f"packed, v_shifts = {v_fp8_shifts}")
 
         k_fp8_packed, v_fp8_packed = k_fp8.view(torch.int32), v_fp8.view(torch.int32)
 
@@ -658,8 +663,8 @@ if torch.version.cuda:
 
 
 if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
-    # BENCHMARKS["bf16"] = AttentionDecodingSplitKV
-    # BENCHMARKS["packed_fp8"] = AttentionDecodingSplitPackedFp8KV
+    BENCHMARKS["bf16"] = AttentionDecodingSplitKV
+    BENCHMARKS["packed_fp8"] = AttentionDecodingSplitPackedFp8KV
     BENCHMARKS["fp8"] = AttentionDecodingSplitFp8KV
     # BENCHMARKS["triton_int4KV"] = AttentionDecodingSplitInt4KV
 
@@ -750,6 +755,40 @@ def test_flash_attention_decoder(name, case):
     torch.testing.assert_close(decoder_output, baseline_out, atol=1e-2, rtol=0)
 
 
+def test_correctness():
+    case = CASES[0]
+    fp8_decoder = AttentionDecodingSplitFp8KV(
+        case["B"],
+        case["Mq"],
+        case["Mkv"],
+        case["Hq"],
+        case["Hkv"],
+        case["K"],
+        False,
+        case["attn_bias_type"],
+    )
+    fp8_inputs = fp8_decoder.get_inputs()
+    fp8_output, ctx = fp8_decoder.OP.apply(fp8_inputs, False)
+
+    packed_fp8_decoder = AttentionDecodingSplitPackedFp8KV(
+        case["B"],
+        case["Mq"],
+        case["Mkv"],
+        case["Hq"],
+        case["Hkv"],
+        case["K"],
+        False,
+        case["attn_bias_type"],
+    )
+    packed_fp8_inputs = packed_fp8_decoder.get_inputs()
+    packed_fp8_output, packed_ctx = packed_fp8_decoder.OP.apply(packed_fp8_inputs, False)
+
+    print(f"non_packed_output = {fp8_output}")
+    print(f"packed_output = {packed_fp8_output}")
+
+    torch.testing.assert_close(fp8_output, packed_fp8_output, atol=1e-2, rtol=0)
+
+
 def main() -> None:
     """
     run performance benchmark
@@ -765,3 +804,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()  # pragma: no cover
+
+
