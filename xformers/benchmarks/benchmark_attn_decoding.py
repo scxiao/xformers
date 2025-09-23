@@ -46,7 +46,28 @@ CASES = [
         K=128,
         attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
         # attn_bias_type=None,
+    ),
+    dict(
+        B=128,
+        Mq=1,
+        Mkv=8192,
+        Hq=8,
+        Hkv=1,
+        K=128,
+        attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        # attn_bias_type=None,
+    ),
+    dict(
+        B=128,
+        Mq=1,
+        Mkv=8192,
+        Hq=8,
+        Hkv=1,
+        K=128,
+        # attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        attn_bias_type=None,
     )
+
     # for i in range(8, 18)
     # for hkv in (1, 2)
 
@@ -475,6 +496,8 @@ class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
         k_fp8_scales_shifts = _combine_scale_shift(k_fp8_scales, k_fp8_shifts)
         v_fp8_scales_shifts = _combine_scale_shift(v_fp8_scales, v_fp8_shifts)
 
+        print(f"non-packed, k_scale_shape = {k_fp8_scales_shifts.shape}")
+
 
         def _to_expanded_shape(x):
             return x.view(1, B * max_context_length, Hkv, 1, -1).expand(
@@ -490,25 +513,27 @@ class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
         self.k_fp8 = _to_expanded_shape(k_fp8)
         self.v_fp8 = _to_expanded_shape(v_fp8)
 
-        self.attn_bias = create_attn_bias(
-            attn_bias_type,
-            batch_size=B,
-            num_heads=Hq,
-            num_heads_groups=Hq // Hkv,
-            q_len=Mq,
-            kv_len=Mkv,
-            dtype=dtype,
-            device=device,
-            requires_grad=False,
-            fmt="BMHK",
-            op=self.OP,
-        )
+        self.attn_bias = None
+        if attn_bias_type is not None:
+            self.attn_bias = create_attn_bias(
+                attn_bias_type,
+                batch_size=B,
+                num_heads=Hq,
+                num_heads_groups=Hq // Hkv,
+                q_len=Mq,
+                kv_len=Mkv,
+                dtype=dtype,
+                device=device,
+                requires_grad=False,
+                fmt="BMHK",
+                op=self.OP,
+            )
 
-        #hard code sequence len to be the same as the
-        # seq_len = torch.full((128, ), 8193, dtype=torch.int32, device='cuda')
-        seq_len = torch.full((128, ), prompt_, dtype=torch.int32, device='cuda')
-        self.attn_bias.k_seqinfo.seqlen = seq_len
-        self.attn_bias.k_seqinfo.max_seqlen=prompt_
+            #hard code sequence len to be the same as the
+            # seq_len = torch.full((128, ), 8193, dtype=torch.int32, device='cuda')
+            seq_len = torch.full((128, ), prompt_, dtype=torch.int32, device='cuda')
+            self.attn_bias.k_seqinfo.seqlen = seq_len
+            self.attn_bias.k_seqinfo.max_seqlen=prompt_
 
     def get_inputs(self):
         inp = InputsFp8(
@@ -595,6 +620,8 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
         k_fp8_scales_shifts_packed = _combine_scale_shift_packed(k_fp8_scales, k_fp8_shifts)
         v_fp8_scales_shifts_packed = _combine_scale_shift_packed(v_fp8_scales, v_fp8_shifts)
 
+        print(f"packed, k_scale_shape = {k_fp8_scales_shifts_packed.shape}")
+
         self.k_fp8_scales_shifts_packed = (
             _to_expanded_shape(k_fp8_scales_shifts_packed).squeeze(-1).contiguous()
         )
@@ -602,25 +629,27 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
             _to_expanded_shape(v_fp8_scales_shifts_packed).squeeze(-1).contiguous()
         )
 
-        self.attn_bias = create_attn_bias(
-            attn_bias_type,
-            batch_size=B,
-            num_heads=Hq,
-            num_heads_groups=Hq // Hkv,
-            q_len=Mq,
-            kv_len=Mkv,
-            dtype=dtype,
-            device=device,
-            requires_grad=False,
-            fmt="BMHK",
-            op=self.OP,
-        )
+        self.attn_bias = None
+        if attn_bias_type is not None:
+            self.attn_bias = create_attn_bias(
+                attn_bias_type,
+                batch_size=B,
+                num_heads=Hq,
+                num_heads_groups=Hq // Hkv,
+                q_len=Mq,
+                kv_len=Mkv,
+                dtype=dtype,
+                device=device,
+                requires_grad=False,
+                fmt="BMHK",
+                op=self.OP,
+            )
 
-        #hard code sequence len to be the same as the
-        # seq_len = torch.full((128, ), 8193, dtype=torch.int32, device='cuda')
-        seq_len = torch.full((128, ), prompt_, dtype=torch.int32, device='cuda')
-        self.attn_bias.k_seqinfo.seqlen = seq_len
-        self.attn_bias.k_seqinfo.max_seqlen=prompt_
+            #hard code sequence len to be the same as the
+            # seq_len = torch.full((128, ), 8193, dtype=torch.int32, device='cuda')
+            seq_len = torch.full((128, ), prompt_, dtype=torch.int32, device='cuda')
+            self.attn_bias.k_seqinfo.seqlen = seq_len
+            self.attn_bias.k_seqinfo.max_seqlen=prompt_
 
     def get_inputs(self):
         inp = InputsFp8(
@@ -756,7 +785,7 @@ def test_flash_attention_decoder(name, case):
 
 
 def test_correctness():
-    case = CASES[0]
+    case = CASES[2]
     fp8_decoder = AttentionDecodingSplitFp8KV(
         case["B"],
         case["Mq"],
@@ -768,7 +797,6 @@ def test_correctness():
         case["attn_bias_type"],
     )
     fp8_inputs = fp8_decoder.get_inputs()
-    fp8_output, ctx = fp8_decoder.OP.apply(fp8_inputs, False)
 
     packed_fp8_decoder = AttentionDecodingSplitPackedFp8KV(
         case["B"],
@@ -781,7 +809,9 @@ def test_correctness():
         case["attn_bias_type"],
     )
     packed_fp8_inputs = packed_fp8_decoder.get_inputs()
+
     packed_fp8_output, packed_ctx = packed_fp8_decoder.OP.apply(packed_fp8_inputs, False)
+    fp8_output, ctx = fp8_decoder.OP.apply(fp8_inputs, False)
 
     print(f"non_packed_output = {fp8_output}")
     print(f"packed_output = {packed_fp8_output}")
@@ -796,7 +826,7 @@ def main() -> None:
     benchmark_main_helper2(
         "attn_decoding",
         fw=True,
-        cases=CASES,
+        cases=[CASES[0]],
         functions=BENCHMARKS,
         min_run_time=min_run_time,
     )
