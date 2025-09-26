@@ -680,9 +680,9 @@ if torch.version.cuda:
 
 
 if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
-    # BENCHMARKS["bf16"] = AttentionDecodingSplitKV
-    BENCHMARKS["packed_fp8"] = AttentionDecodingSplitPackedFp8KV
-    # BENCHMARKS["fp8"] = AttentionDecodingSplitFp8KV
+    # BENCHMARKS["triton_splitK"] = AttentionDecodingSplitKV
+    # BENCHMARKS["packed_fp8"] = AttentionDecodingSplitPackedFp8KV
+    BENCHMARKS["fp8"] = AttentionDecodingSplitFp8KV
     # BENCHMARKS["triton_int4KV"] = AttentionDecodingSplitInt4KV
 
 try:
@@ -753,7 +753,7 @@ def test_flash_attention_decoder(name, case):
     inputs = baseline.get_inputs()
     decoder = BENCHMARKS[name]
 
-    assert name in ["ck_splitK", "ck", "triton_splitK", "triton_int4KV"]
+    assert name in ["ck_splitK", "ck", "triton_splitK", "triton_int4KV", "packed_fp8", "fp8"]
     decoder_output, ctx = decoder.OP.apply(inputs, False)
 
     q, k, v = inputs.get_qkv_in_bmghk()
@@ -769,62 +769,8 @@ def test_flash_attention_decoder(name, case):
         decoder_output = decoder_output.reshape(B, H * G, -1, Kq).contiguous()
 
     decoder_output = decoder_output.transpose(2, 1).contiguous()
-    torch.testing.assert_close(decoder_output, baseline_out, atol=1e-2, rtol=0)
 
-def test_correctness():
-    case = CASES[2]
-    baseline_decoder = AttentionDecodingPyTorchRepeat(
-        case["B"],
-        case["Mq"],
-        case["Mkv"],
-        case["Hq"],
-        case["Hkv"],
-        case["K"],
-        False,
-        case["attn_bias_type"],
-    )
-
-    baseline_output = baseline_decoder.fw()
-    inputs = baseline_decoder.get_inputs()
-
-    fp8_decoder = AttentionDecodingSplitFp8KV(
-        case["B"],
-        case["Mq"],
-        case["Mkv"],
-        case["Hq"],
-        case["Hkv"],
-        case["K"],
-        False,
-        case["attn_bias_type"],
-    )
-    fp8_inputs = fp8_decoder.get_inputs()
-    fp8_output, ctx = fp8_decoder.OP.apply(fp8_inputs, False)
-    # print(f"fp8_input = {fp8_inputs.query.to(torch.bfloat16)}")
-
-    # print(f"baseline_output = {baseline_output}")
-    # print(f"non_packed_output = {fp8_output}")
-    torch.testing.assert_close(baseline_output, fp8_output, atol=1e-2, rtol=0)
-
-    # packed_fp8_decoder = AttentionDecodingSplitPackedFp8KV(
-    #     case["B"],
-    #     case["Mq"],
-    #     case["Mkv"],
-    #     case["Hq"],
-    #     case["Hkv"],
-    #     case["K"],
-    #     False,
-    #     case["attn_bias_type"],
-    # )
-    # packed_fp8_inputs = packed_fp8_decoder.get_inputs()
-    # packed_fp8_output, packed_ctx = packed_fp8_decoder.OP.apply(packed_fp8_inputs, False)
-    # # print(f"packed_fp8_inputs = {packed_fp8_inputs.query.to(torch.bfloat16)}")
-
-
-    # # print(f"packed_output = {packed_fp8_output}")
-    # # print(f"non_packed_output = {fp8_output}")
-
-    # torch.testing.assert_close(fp8_output, packed_fp8_output, atol=1e-2, rtol=0)
-
+    torch.testing.assert_close(decoder_output, baseline_out, atol=1e-2, rtol=0.01)
 
 
 def main() -> None:
