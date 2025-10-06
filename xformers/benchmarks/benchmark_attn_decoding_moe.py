@@ -11,6 +11,7 @@ from typing import Any, Dict, Type
 
 import pytest
 import torch
+import traceback
 
 import xformers.ops as xops
 from xformers.attn_bias_utils import create_attn_bias
@@ -36,7 +37,7 @@ CASES = [
         attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
     )
     for b in [32, 128]
-    for mkv in [8192, 32769]
+    for mkv in [8193, 32769]
 ]
 
 
@@ -136,7 +137,7 @@ class AttentionDecodingBase:
             )
 
             #hard code sequence len to be the same as the
-            seq_len = torch.full((128, ), Mkv, dtype=torch.int32, device='cuda')
+            seq_len = torch.full((B, ), Mkv, dtype=torch.int32, device='cuda')
             self.attn_bias.k_seqinfo.seqlen = seq_len
             self.attn_bias.k_seqinfo.max_seqlen=Mkv
 
@@ -486,7 +487,7 @@ class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
             )
 
             #hard code sequence len to be the same as the
-            seq_len = torch.full((128, ), Mkv, dtype=torch.int32, device='cuda')
+            seq_len = torch.full((B, ), Mkv, dtype=torch.int32, device='cuda')
             self.attn_bias.k_seqinfo.seqlen = seq_len
             self.attn_bias.k_seqinfo.max_seqlen=Mkv
 
@@ -507,7 +508,8 @@ class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
                 self.get_inputs(), op=xops.fmha.triton_splitk.FwOp
             )
         except (RuntimeError, ValueError) as e:
-            print(f"Runtime error: {e}")
+            print(f"non-packed fp8, Runtime error: {e}")
+            traceback.print_exc()
 
 
 class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
@@ -597,7 +599,7 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
             )
 
             #hard code sequence len to be the same as the
-            seq_len = torch.full((128, ), Mkv, dtype=torch.int32, device='cuda')
+            seq_len = torch.full((B, ), Mkv, dtype=torch.int32, device='cuda')
             self.attn_bias.k_seqinfo.seqlen = seq_len
             self.attn_bias.k_seqinfo.max_seqlen=Mkv
 
@@ -628,7 +630,6 @@ class AttentionDecodingPyTorchRepeat(AttentionDecodingBase):
         q = self.q.reshape([B, Mq, -1, K]).permute(0, 2, 1, 3)
         k = self.k.reshape([B, Mkv, -1, K]).permute(0, 2, 1, 3)
         v = self.v.reshape([B, Mkv, -1, K]).permute(0, 2, 1, 3)
-        print(f"q = {q.shape}, k = {k.shape}, v = {v.shape}")
         attn = (q @ k.transpose(-1, -2) * scale).softmax(-1)
         return attn @ v
 
