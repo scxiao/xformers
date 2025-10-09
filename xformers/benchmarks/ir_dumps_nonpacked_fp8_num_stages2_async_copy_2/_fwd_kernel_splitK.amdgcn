@@ -1013,7 +1013,6 @@ _fwd_kernel_splitK:                     ; @_fwd_kernel_splitK
 	ds_read2st64_b64 v[34:37], v8 offset1:4
 	ds_read2st64_b64 v[18:21], v8 offset0:8 offset1:12
 	.loc	2 856 27                        ; splitk_kernels.py:856:27 @[ <unroll_varargs-_fwd_kernel_splitK-unroll-1>:159:227 ]
-	s_waitcnt vmcnt(0)
 	ds_write_b32 v2, v50 offset:32768
 	; wave barrier
 	v_mov_b32_e32 v2, v183
@@ -1136,7 +1135,6 @@ _fwd_kernel_splitK:                     ; @_fwd_kernel_splitK
 	v_accvgpr_write_b32 a65, v155
 	v_accvgpr_write_b32 a66, v156
 	.loc	2 857 41                        ; splitk_kernels.py:857:41 @[ <unroll_varargs-_fwd_kernel_splitK-unroll-1>:159:227 ]
-	s_waitcnt vmcnt(0)
 	v_pk_fma_f32 v[228:229], v[38:39], v[50:51], v[182:183] op_sel_hi:[1,0,0]
 	v_pk_fma_f32 v[244:245], v[36:37], v[50:51], v[182:183] op_sel_hi:[1,0,0]
 	.loc	2 856 44                        ; splitk_kernels.py:856:44 @[ <unroll_varargs-_fwd_kernel_splitK-unroll-1>:159:227 ]
@@ -2228,6 +2226,7 @@ _fwd_kernel_splitK:                     ; @_fwd_kernel_splitK
 	v_fmac_f32_e32 v73, v38, v30
 	v_accvgpr_read_b32 v38, a82
 	.loc	1 137 33                        ; <unroll_varargs-_fwd_kernel_splitK-unroll-1>:137:33
+	s_waitcnt vmcnt(0)
 	s_cbranch_scc1 .LBB0_4
 ; %bb.5:                                ; %Flow
 	.loc	1 0 33 is_stmt 0                ; <unroll_varargs-_fwd_kernel_splitK-unroll-1>:0:33
