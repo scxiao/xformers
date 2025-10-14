@@ -21,8 +21,8 @@ from xformers.ops.fmha import Inputs, triton_splitk
 min_run_time = 0.5
 device = torch.device("cuda")
 
-#prompt_ = 32769
-prompt_ = 8193
+prompt_ = 32769
+#prompt_ = 8193
 
 
 CASES = [
