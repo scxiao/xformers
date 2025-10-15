@@ -172,7 +172,7 @@ class AttentionDecodingBase:
 
             #hard code sequence len to be the same as the
             # seq_len = torch.full((128, ), 8193, dtype=torch.int32, device='cuda')
-            seq_len = torch.full((128, ), prompt_, dtype=torch.int32, device='cuda')
+            seq_len = torch.full((B, ), prompt_, dtype=torch.int32, device='cuda')
             self.attn_bias.k_seqinfo.seqlen = seq_len
             self.attn_bias.k_seqinfo.max_seqlen=prompt_
 
@@ -523,7 +523,7 @@ class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
 
             #hard code sequence len to be the same as the
             # seq_len = torch.full((128, ), 8193, dtype=torch.int32, device='cuda')
-            seq_len = torch.full((128, ), prompt_, dtype=torch.int32, device='cuda')
+            seq_len = torch.full((B, ), prompt_, dtype=torch.int32, device='cuda')
             self.attn_bias.k_seqinfo.seqlen = seq_len
             self.attn_bias.k_seqinfo.max_seqlen=prompt_
 
@@ -635,7 +635,7 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
 
             #hard code sequence len to be the same as the
             # seq_len = torch.full((128, ), 8193, dtype=torch.int32, device='cuda')
-            seq_len = torch.full((128, ), prompt_, dtype=torch.int32, device='cuda')
+            seq_len = torch.full((B, ), prompt_, dtype=torch.int32, device='cuda')
             self.attn_bias.k_seqinfo.seqlen = seq_len
             self.attn_bias.k_seqinfo.max_seqlen=prompt_
 
@@ -723,6 +723,28 @@ TEST_CASES = [
     for i in [2, 4, 8, 16, 32, 64, 128]
 ]
 
+# TEST_CASES = [
+#     dict(
+#         B=128,
+#         Mq=1,
+#         Mkv=32769,
+#         Hq=8,
+#         Hkv=1,
+#         K=128,
+#         # attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+#         attn_bias_type=None,
+#     ),
+#     dict(
+#         B=128,
+#         Mq=1,
+#         Mkv=8193,
+#         Hq=8,
+#         Hkv=1,
+#         K=128,
+#         # attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+#         attn_bias_type=None,
+#     ),
+# ]
 
 def get_benchmark_names():
     decoder_names = list(BENCHMARKS.keys())
