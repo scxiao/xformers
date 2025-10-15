@@ -29,9 +29,9 @@ We can see buffer ops for input load can uplift the kernel performance, particul
 
 The corresponding ir dumps are at: 
 
--[bf16_buffer_load](https://github.com/scxiao/xformers/tree/scxiao/attn_decode_buffer_ops_showcase/xformers/benchmarks/ir_dump_buffer_ops_bf16)
--[bf16_no_buffer_load](https://github.com/scxiao/xformers/tree/scxiao/attn_decode_buffer_ops_showcase/xformers/benchmarks/ir_dump_no_buffer_ops_bf16)
--[fp8_buffer_load](https://github.com/scxiao/xformers/tree/scxiao/attn_decode_buffer_ops_showcase/xformers/benchmarks/ir_dump_buffer_ops_fp8)
--[fp8_no_buffer_load](https://github.com/scxiao/xformers/tree/scxiao/attn_decode_buffer_ops_showcase/xformers/benchmarks/ir_dump_no_buffer_ops_fp8)
+- [bf16_buffer_load](https://github.com/scxiao/xformers/tree/scxiao/attn_decode_buffer_ops_showcase/xformers/benchmarks/ir_dump_buffer_ops_bf16)
+- [bf16_no_buffer_load](https://github.com/scxiao/xformers/tree/scxiao/attn_decode_buffer_ops_showcase/xformers/benchmarks/ir_dump_no_buffer_ops_bf16)
+- [fp8_buffer_load](https://github.com/scxiao/xformers/tree/scxiao/attn_decode_buffer_ops_showcase/xformers/benchmarks/ir_dump_buffer_ops_fp8)
+- [fp8_no_buffer_load](https://github.com/scxiao/xformers/tree/scxiao/attn_decode_buffer_ops_showcase/xformers/benchmarks/ir_dump_no_buffer_ops_fp8)
 
 
