@@ -21,33 +21,17 @@ from xformers.ops.fmha import Inputs, triton_splitk
 min_run_time = 0.5
 device = torch.device("cuda")
 
-prompt_ = 32769
-# prompt_ = 8193
-
-
 CASES = [
     # dict(
-    #     B=max(1, 2 ** (16 - i)),
+    #     B=128,
     #     Mq=1,
-    #     Mkv=2**i,
-    #     Hq=16,
-    #     Hkv=hkv,
+    #     Mkv=32769,
+    #     Hq=8,
+    #     Hkv=1,
     #     K=128,
     #     attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-    # )
-    # for i in range(8, 18)
-    # for hkv in (1, 2)
-
-    dict(
-        B=128,
-        Mq=1,
-        Mkv=32769,
-        Hq=8,
-        Hkv=1,
-        K=128,
-        attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-        # attn_bias_type=None,
-    ),
+    #     # attn_bias_type=None,
+    # ),
     dict(
         B=128,
         Mq=1,
