@@ -644,7 +644,7 @@ class FwOp(AttentionFwOpBase):
             return out, None
 
         k_fp8_scale_shift, v_fp8_scale_shift = cls.get_fp8_scale_shift(inp)
-        IS_FP8_PACKED = (k_fp8_scale_shift is not None) and (k_fp8_scale_shift.dtype == torch.int32)
+        IS_PACKED = (k_fp8_scale_shift is not None) and (k_fp8_scale_shift.dtype == torch.int32)
 
         if not isinstance(inp.attn_bias, torch.Tensor):
             attn_bias_tensor = None
@@ -718,8 +718,13 @@ class FwOp(AttentionFwOpBase):
             k = k.view(kv_shape)
             v = v.view(kv_shape)
             if k_fp8_scale_shift is not None and v_fp8_scale_shift is not None:
-                k_fp8_scale_shift = k_fp8_scale_shift.view(kv_shape[:-1])
-                v_fp8_scale_shift = v_fp8_scale_shift.view(kv_shape[:-1])
+                if IS_PACKED:
+                    k_fp8_scale_shift = k_fp8_scale_shift.view(kv_shape[:-1])
+                    v_fp8_scale_shift = v_fp8_scale_shift.view(kv_shape[:-1])
+                else:
+                    kv_scale_offset_shape = (1 if is_paged or is_gappy else B, -1, Hq, 2)
+                    k_fp8_scale_shift = k_fp8_scale_shift.view(kv_scale_offset_shape)
+                    v_fp8_scale_shift = v_fp8_scale_shift.view(kv_scale_offset_shape)
 
             Mq = q.shape[1]
             NUM_QUERIES_CAUSAL = Mq
@@ -757,6 +762,8 @@ class FwOp(AttentionFwOpBase):
             k = k[:, :, :, :1]
             v = v[:, :, :, :1]
             if k_fp8_scale_shift is not None and v_fp8_scale_shift is not None:
+                k_fp8_scale_shift = k_fp8_scale_shift[:, :, :, :1]
+                v_fp8_scale_shift = v_fp8_scale_shift[:, :, :, :1]
                 k_fp8_scale_shift = k_fp8_scale_shift[:, :, :, :1]
                 v_fp8_scale_shift = v_fp8_scale_shift[:, :, :, :1]
 
@@ -938,7 +945,7 @@ class FwOp(AttentionFwOpBase):
             IS_LOCAL=IS_LOCAL,
             NUM_QUERIES_CAUSAL=NUM_QUERIES_CAUSAL,
             IS_SPLITK=IS_SPLITK,
-            IS_FP8_PACKED = IS_FP8_PACKED,
+            IS_FP8_PACKED = IS_PACKED,
             SPLIT_K_EARLY_EXIT=cls.SPLIT_K_EARLY_EXIT,
             USE_PAGED_ATTENTION=is_paged,
             PAGE_SIZE=page_size,

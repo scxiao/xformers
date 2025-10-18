@@ -497,13 +497,15 @@ class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
             )
 
         self.k_fp8_scales_shifts = (
-            _to_expanded_shape(k_fp8_scales_shifts).squeeze(-1).contiguous()
+            _to_expanded_shape(k_fp8_scales_shifts).squeeze(-1)
         )
         self.v_fp8_scales_shifts = (
-            _to_expanded_shape(v_fp8_scales_shifts).squeeze(-1).contiguous()
+            _to_expanded_shape(v_fp8_scales_shifts).squeeze(-1)
         )
         self.k_fp8 = _to_expanded_shape(k_fp8)
         self.v_fp8 = _to_expanded_shape(v_fp8)
+        print(f"benchmark, k_scale_shape = {self.v_fp8_scales_shifts.shape}, stride = {self.v_fp8_scales_shifts.stride()}")
+        print(f"benchmark, k_shape = {self.v_fp8.shape}, stride = {self.v_fp8.stride()}")
 
         self.attn_bias = None
         if attn_bias_type is not None:
@@ -616,6 +618,8 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
         self.v_fp8_scales_shifts_packed = (
             _to_expanded_shape(v_fp8_scales_shifts_packed).squeeze(-1).contiguous()
         )
+        print(f"benchmark fp8 packed, k_scale_shape = {self.k_fp8_scales_shifts_packed.shape}, stride = {self.k_fp8_scales_shifts_packed.stride()}")
+        print(f"benchmark fp8 packed, k_shape = {self.k_fp8_packed.shape}, stride = {self.k_fp8_packed.stride()}")
 
         self.attn_bias = None
         if attn_bias_type is not None:
@@ -681,8 +685,8 @@ if torch.version.cuda:
 
 if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
     # BENCHMARKS["triton_splitK"] = AttentionDecodingSplitKV
-    # BENCHMARKS["packed_fp8"] = AttentionDecodingSplitPackedFp8KV
-    BENCHMARKS["fp8"] = AttentionDecodingSplitFp8KV
+    BENCHMARKS["packed_fp8"] = AttentionDecodingSplitPackedFp8KV
+    # BENCHMARKS["fp8"] = AttentionDecodingSplitFp8KV
     # BENCHMARKS["triton_int4KV"] = AttentionDecodingSplitInt4KV
 
 try:
@@ -770,7 +774,7 @@ def test_flash_attention_decoder(name, case):
 
     decoder_output = decoder_output.transpose(2, 1).contiguous()
 
-    torch.testing.assert_close(decoder_output, baseline_out, atol=1e-2, rtol=0.01)
+    torch.testing.assert_close(decoder_output, baseline_out, atol=1e-3, rtol=0.0001)
 
 
 def main() -> None:
