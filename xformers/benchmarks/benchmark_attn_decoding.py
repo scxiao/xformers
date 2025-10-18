@@ -685,8 +685,8 @@ if torch.version.cuda:
 
 if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
     # BENCHMARKS["triton_splitK"] = AttentionDecodingSplitKV
-    BENCHMARKS["packed_fp8"] = AttentionDecodingSplitPackedFp8KV
-    # BENCHMARKS["fp8"] = AttentionDecodingSplitFp8KV
+    # BENCHMARKS["packed_fp8"] = AttentionDecodingSplitPackedFp8KV
+    BENCHMARKS["fp8"] = AttentionDecodingSplitFp8KV
     # BENCHMARKS["triton_int4KV"] = AttentionDecodingSplitInt4KV
 
 try:

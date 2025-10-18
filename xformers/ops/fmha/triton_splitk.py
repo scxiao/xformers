@@ -715,7 +715,9 @@ class FwOp(AttentionFwOpBase):
                 q = q.view(B, -1, G, Hq, Kq)
 
             kv_shape = (1 if is_paged or is_gappy else B, -1, G, Hq, Kkv)
+            print(f"before, k, shape = {k.shape}, stride = {k.stride()}")
             k = k.view(kv_shape)
+            print(f"after, k, shape = {k.shape}, stride = {k.stride()}")
             v = v.view(kv_shape)
             if k_fp8_scale_shift is not None and v_fp8_scale_shift is not None:
                 if IS_PACKED:
@@ -723,8 +725,10 @@ class FwOp(AttentionFwOpBase):
                     v_fp8_scale_shift = v_fp8_scale_shift.view(kv_shape[:-1])
                 else:
                     kv_scale_offset_shape = (1 if is_paged or is_gappy else B, -1, Hq, 2)
+                    print(f"before, k_scale_shift, shape = {k_fp8_scale_shift.shape}, stride = {k_fp8_scale_shift.stride()}")
                     k_fp8_scale_shift = k_fp8_scale_shift.view(kv_scale_offset_shape)
                     v_fp8_scale_shift = v_fp8_scale_shift.view(kv_scale_offset_shape)
+                    print(f"after, k_scale_shift, shape = {k_fp8_scale_shift.shape}, stride = {k_fp8_scale_shift.stride()}")
 
             Mq = q.shape[1]
             NUM_QUERIES_CAUSAL = Mq
