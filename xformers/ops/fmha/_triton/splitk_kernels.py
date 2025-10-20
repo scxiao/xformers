@@ -102,7 +102,7 @@ def _fwd_kernel_splitK(
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
     IS_SPLITK: tl.constexpr,
-    IS_FP8_PACKED: tl.constexpr,
+    IS_PACKED: tl.constexpr,
     SPLIT_K_EARLY_EXIT: tl.constexpr,
     IS_CAUSAL: tl.constexpr,
     IS_LOCAL: tl.constexpr,
@@ -142,6 +142,7 @@ def _fwd_kernel_splitK(
     tl.assume(stride_lsek_h > 0)
     tl.assume(stride_lsek_s > 0)
     tl.assume(stride_lsek_m > 0)
+
     """This kernel can accept non-quantized or int4-quantized keys/values.
     PACKED_PER_VAL determines the quantization type:
         - PACKED_PER_VAL == 1 means no quantization
@@ -310,7 +311,7 @@ def _fwd_kernel_splitK(
                 block_shape=(BLOCK_N, 1),
                 order=(1, 0),
             )
-        elif FP8_QUANTIZED and IS_FP8_PACKED:
+        elif FP8_QUANTIZED and IS_PACKED:
             if Seq_starts_k is not None:
                 k_fp8_scale_shift_base += start_kv_idx * stride_k_fp8_scale_shift_n
                 v_fp8_scale_shift_base += start_kv_idx * stride_v_fp8_scale_shift_n
@@ -483,7 +484,7 @@ def _fwd_kernel_splitK(
                     block_shape=(BLOCK_N, 1),
                     order=(1, 0),
                 )
-            elif FP8_QUANTIZED and IS_FP8_PACKED:
+            elif FP8_QUANTIZED and IS_PACKED:
                 K_scale_shift_block_ptr = tl.make_block_ptr(
                     base=k_fp8_scale_shift_base,
                     shape=(1, offset + current_block_size),
@@ -535,7 +536,7 @@ def _fwd_kernel_splitK(
             #     PACKED_PER_VAL,
             #     PACKED_D_PER_GROUP,
             #     FP8_QUANTIZED,
-            #     IS_FP8_PACKED,
+            #     IS_PACKED,
             #     Q.dtype.element_ty,
             #     i,
             #     IS_HIP,
@@ -548,7 +549,7 @@ def _fwd_kernel_splitK(
                 PACKED_PER_VAL,
                 PACKED_D_PER_GROUP,
                 FP8_QUANTIZED,
-                IS_FP8_PACKED,
+                IS_PACKED,
                 Q.dtype.element_ty,
                 i,
                 IS_HIP,
@@ -568,7 +569,7 @@ def _fwd_kernel_splitK(
                 PACKED_PER_VAL,
                 PACKED_D_PER_GROUP,
                 FP8_QUANTIZED,
-                IS_FP8_PACKED,
+                IS_PACKED,
                 Q.dtype.element_ty,
                 i,
                 IS_HIP,
@@ -634,7 +635,7 @@ def _fwd_kernel_splitK(
             # update pointers
             K_block_ptr = tl.advance(K_block_ptr, (0, BLOCK_N))
             V_block_ptr = tl.advance(V_block_ptr, (BLOCK_N, 0))
-            if PACKED_PER_VAL > 1 or (FP8_QUANTIZED and (not IS_FP8_PACKED)):
+            if PACKED_PER_VAL > 1 or (FP8_QUANTIZED and (not IS_PACKED)):
                 K_scale_shift_block_ptr = tl.advance(
                     K_scale_shift_block_ptr, (0, BLOCK_N)
                 )
@@ -804,7 +805,7 @@ def load_dequantize_k_v_group(
     PACKED_PER_VAL: tl.constexpr,
     PACKED_D_PER_GROUP: tl.constexpr,
     FP8_QUANTIZED: tl.constexpr,
-    IS_FP8_PACKED: tl.constexpr,
+    IS_PACKED: tl.constexpr,
     dtype: tl.constexpr,
     group_id: tl.constexpr,
     IS_HIP: tl.constexpr,
@@ -821,7 +822,7 @@ def load_dequantize_k_v_group(
     v = tl.load(V_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ())
 
     # If K/V are quantized, load quantization coefficients and dequantize.
-    if FP8_QUANTIZED and IS_FP8_PACKED:
+    if FP8_QUANTIZED and IS_PACKED:
         v_scale_shift = tl.load(
             V_scale_shift_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ()
         )
@@ -902,7 +903,7 @@ def load_dequantize_k_group(
     PACKED_PER_VAL: tl.constexpr,
     PACKED_D_PER_GROUP: tl.constexpr,
     FP8_QUANTIZED: tl.constexpr,
-    IS_FP8_PACKED: tl.constexpr,
+    IS_PACKED: tl.constexpr,
     dtype: tl.constexpr,
     group_id: tl.constexpr,
     IS_HIP: tl.constexpr,
@@ -917,7 +918,7 @@ def load_dequantize_k_group(
     k = tl.load(K_block_ptr, boundary_check=(1,) if BOUNDS_CHECKS_N else ())
 
     # If K/V are quantized, load quantization coefficients and dequantize.
-    if FP8_QUANTIZED and IS_FP8_PACKED:
+    if FP8_QUANTIZED and IS_PACKED:
         k_scale_shift = tl.load(
             K_scale_shift_block_ptr, boundary_check=(1,) if BOUNDS_CHECKS_N else ()
         )
@@ -973,7 +974,7 @@ def load_dequantize_v_group(
     PACKED_PER_VAL: tl.constexpr,
     PACKED_D_PER_GROUP: tl.constexpr,
     FP8_QUANTIZED: tl.constexpr,
-    IS_FP8_PACKED: tl.constexpr,
+    IS_PACKED: tl.constexpr,
     dtype: tl.constexpr,
     group_id: tl.constexpr,
     IS_HIP: tl.constexpr,
@@ -988,7 +989,7 @@ def load_dequantize_v_group(
     v = tl.load(V_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ())
 
     # If K/V are quantized, load quantization coefficients and dequantize.
-    if FP8_QUANTIZED and IS_FP8_PACKED:
+    if FP8_QUANTIZED and IS_PACKED:
         v_scale_shift = tl.load(
             V_scale_shift_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ()
         )
