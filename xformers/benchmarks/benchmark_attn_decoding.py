@@ -496,10 +496,10 @@ class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
             )
 
         self.k_fp8_scales_shifts = (
-            _to_expanded_shape(k_fp8_scales_shifts).squeeze(-1)
+            _to_expanded_shape(k_fp8_scales_shifts).squeeze(-1).contiguous()
         )
         self.v_fp8_scales_shifts = (
-            _to_expanded_shape(v_fp8_scales_shifts).squeeze(-1)
+            _to_expanded_shape(v_fp8_scales_shifts).squeeze(-1).contiguous()
         )
         self.k_fp8 = _to_expanded_shape(k_fp8)
         self.v_fp8 = _to_expanded_shape(v_fp8)

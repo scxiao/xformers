@@ -891,11 +891,18 @@ class FwOp(AttentionFwOpBase):
             IS_TRITON_UPGRADE = False
         IS_HIP = torch.version.hip is not None
 
-        print(f"B = {B}, H = {H}, G = {G}, split_k = {split_k}, split_size = {split_size}")
-        print(f"extra_args = {extra_args}")
-        print(f"q, shape = {q.shape}, stride = {q.stride()}")
-        print(f"k, shape = {k.shape}, stride = {k.stride()}")
-        print(f"v, shape = {v.shape}, stride = {v.stride()}")
+        # print(f"B = {B}, H = {H}, G = {G}, split_k = {split_k}, split_size = {split_size}")
+        # print(f"extra_args = {extra_args}")
+        # print(f"q, shape = {q.shape}, stride = {q.stride()}")
+        # print(f"k, shape = {k.shape}, stride = {k.stride()}")
+        # print(f"v, shape = {v.shape}, stride = {v.stride()}")
+        # print(f"k_scale_shift, shape = {k_fp8_scale_shift.shape}, stride = {k_fp8_scale_shift.stride()}")
+        # print(f"v_scale_shift, shape = {v_fp8_scale_shift.shape}, stride = {v_fp8_scale_shift.stride()}")
+        # print(f"triton, q = {q[0][0]}")
+        # print(f"triton, k = {k[0][0]}")
+        # print(f"triton, v = {v[0][0]}")
+        # print(f"k_fp8_scale_shift = {k_fp8_scale_shift[0][0]}")
+        # print(f"v_fp8_scale_shift = {v_fp8_scale_shift[0][0]}")
 
         kernel[grid](
             Q=q,

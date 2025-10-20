@@ -342,14 +342,24 @@ def _fwd_kernel_splitK(
             else:
                 k_fp8_scale_shift_base += off_z * stride_k_fp8_scale_shift_z
                 v_fp8_scale_shift_base += off_z * stride_v_fp8_scale_shift_z
+            # K_scale_shift_block_ptr = tl.make_block_ptr(
+            #     base=k_fp8_scale_shift_base,
+            #     shape=(hi, 2),
+            #     strides=(stride_k_fp8_scale_shift_n, 1),
+            #     offsets=(lo, 0),
+            #     block_shape=(BLOCK_N, 2),
+            #     order=(1, 0),
+            # )
+
             K_scale_shift_block_ptr = tl.make_block_ptr(
                 base=k_fp8_scale_shift_base,
-                shape=(hi, 2),
-                strides=(stride_k_fp8_scale_shift_n, 1),
-                offsets=(lo, 0),
-                block_shape=(BLOCK_N, 2),
-                order=(1, 0),
+                shape=(2, hi),
+                strides=(1, stride_k_fp8_scale_shift_n),
+                offsets=(0, lo),
+                block_shape=(2, BLOCK_N),
+                order=(0, 1),
             )
+
             V_scale_shift_block_ptr = tl.make_block_ptr(
                 base=v_fp8_scale_shift_base,
                 shape=(hi, 2),
@@ -503,14 +513,24 @@ def _fwd_kernel_splitK(
                 )
             # use fp8 directly as input
             elif FP8_QUANTIZED:
+                # K_scale_shift_block_ptr = tl.make_block_ptr(
+                #     base=k_fp8_scale_shift_base,
+                #     shape=(offset + current_block_size, 2),
+                #     strides=(stride_k_fp8_scale_shift_n, 1),
+                #     offsets=(offset, 0),
+                #     block_shape=(BLOCK_N, 2),
+                #     order=(1, 0),
+                # )
+
                 K_scale_shift_block_ptr = tl.make_block_ptr(
                     base=k_fp8_scale_shift_base,
-                    shape=(offset + current_block_size, 2),
-                    strides=(stride_k_fp8_scale_shift_n, 1),
-                    offsets=(offset, 0),
-                    block_shape=(BLOCK_N, 2),
-                    order=(1, 0),
+                    shape=(2, offset + current_block_size),
+                    strides=(1, stride_k_fp8_scale_shift_n),
+                    offsets=(0, offset),
+                    block_shape=(2, BLOCK_N),
+                    order=(0, 1),
                 )
+
                 V_scale_shift_block_ptr = tl.make_block_ptr(
                     base=v_fp8_scale_shift_base,
                     shape=(offset + current_block_size, 2),
@@ -937,9 +957,9 @@ def load_dequantize_k_group(
             k = tl.trans(k_t)
     elif FP8_QUANTIZED:
         k_scale_shift = tl.load(
-            K_scale_shift_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ()
+            K_scale_shift_block_ptr, boundary_check=(1,) if BOUNDS_CHECKS_N else ()
         )
-        k_scale, k_shift = k_scale_shift.to(tl.float32).split()
+        k_scale, k_shift = k_scale_shift.to(tl.float32).trans().split()
         k = k.to(tl.float32) * k_scale + k_shift
         k = k.to(dtype)
 
