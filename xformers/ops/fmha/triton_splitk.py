@@ -674,9 +674,6 @@ class FwOp(AttentionFwOpBase):
         seq_starts_q = None
         seq_starts_q_multiplier = None
         q, k, v = inp.get_qkv_in_bmghk()
-        print(f"apply, q, shape = {q.shape}, stride = {q.stride()}")
-        print(f"apply, k, shape = {k.shape}, stride = {k.stride()}")
-        print(f"apply, v, shape = {v.shape}, stride = {v.stride()}")
         IS_CAUSAL = False
         IS_LOCAL = False
         NUM_QUERIES_CAUSAL = 1
@@ -718,9 +715,7 @@ class FwOp(AttentionFwOpBase):
                 q = q.view(B, -1, G, Hq, Kq)
 
             kv_shape = (1 if is_paged or is_gappy else B, -1, G, Hq, Kkv)
-            print(f"before, k, shape = {k.shape}, stride = {k.stride()}")
             k = k.view(kv_shape)
-            print(f"after, k, shape = {k.shape}, stride = {k.stride()}")
             v = v.view(kv_shape)
             if k_fp8_scale_shift is not None and v_fp8_scale_shift is not None:
                 if IS_PACKED:
@@ -728,16 +723,13 @@ class FwOp(AttentionFwOpBase):
                     v_fp8_scale_shift = v_fp8_scale_shift.view(kv_shape[:-1])
                 else:
                     kv_scale_offset_shape = (1 if is_paged or is_gappy else B, -1, Hq, 2)
-                    print(f"before, k_scale_shift, shape = {k_fp8_scale_shift.shape}, stride = {k_fp8_scale_shift.stride()}")
                     k_fp8_scale_shift = k_fp8_scale_shift.view(kv_scale_offset_shape)
                     v_fp8_scale_shift = v_fp8_scale_shift.view(kv_scale_offset_shape)
-                    print(f"after, k_scale_shift, shape = {k_fp8_scale_shift.shape}, stride = {k_fp8_scale_shift.stride()}")
 
             Mq = q.shape[1]
             NUM_QUERIES_CAUSAL = Mq
         else:
             B, Mq, G, Hq, Kq = q.shape
-            print(f"loc1111-----, q_shape = {q.shape}")
             if k_fp8_scale_shift is not None and k_fp8_scale_shift.dtype == torch.float16:
                 if IS_PACKED:
                     Kkv = v.shape[-1]
@@ -746,11 +738,8 @@ class FwOp(AttentionFwOpBase):
                     v_fp8_scale_shift = v_fp8_scale_shift.view(kv_shape[:-1])
                 else:
                     kv_scale_offset_shape = (1 if is_paged or is_gappy else B, -1, Hq, 2)
-                    print(f"before, k_scale_shift, shape = {k_fp8_scale_shift.shape}, stride = {k_fp8_scale_shift.stride()}")
                     k_fp8_scale_shift = k_fp8_scale_shift.view(kv_scale_offset_shape)
                     v_fp8_scale_shift = v_fp8_scale_shift.view(kv_scale_offset_shape)
-                    print(f"after, k_scale_shift, shape = {k_fp8_scale_shift.shape}, stride = {k_fp8_scale_shift.stride()}")
-
 
         if attn_bias_tensor is not None and attn_bias_tensor.ndim == 4:
             # (B, H, Mq, Mkv) -> (B, G, H, Mq, Mkv)
@@ -782,10 +771,6 @@ class FwOp(AttentionFwOpBase):
                     v_fp8_scale_shift = v_fp8_scale_shift[:, :, :, :1]
                     k_fp8_scale_shift = k_fp8_scale_shift[:, :, :, :1]
                     v_fp8_scale_shift = v_fp8_scale_shift[:, :, :, :1]
-
-        print(f"last, q, shape = {q.shape}, stride = {q.stride()}")
-        print(f"last, k, shape = {k.shape}, stride = {k.stride()}")
-        print(f"last, v, shape = {v.shape}, stride = {v.stride()}")
 
         if k.dtype == torch.int32:
             if k_fp8_scale_shift is not None:

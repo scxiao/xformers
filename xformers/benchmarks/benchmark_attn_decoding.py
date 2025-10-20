@@ -51,23 +51,23 @@ CASES = [
     dict(
         B=128,
         Mq=1,
-        Mkv=8192,
+        Mkv=8193,
         Hq=8,
         Hkv=1,
         K=128,
-        # attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-        attn_bias_type=None,
+        attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        # attn_bias_type=None,
     ),
-    dict(
-        B=128,
-        Mq=1,
-        Mkv=8192,
-        Hq=8,
-        Hkv=1,
-        K=128,
-        # attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-        attn_bias_type=None,
-    )
+    # dict(
+    #     B=128,
+    #     Mq=1,
+    #     Mkv=8192,
+    #     Hq=8,
+    #     Hkv=1,
+    #     K=128,
+    #     # attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    #     attn_bias_type=None,
+    # )
 
     # for i in range(8, 18)
     # for hkv in (1, 2)
@@ -145,10 +145,6 @@ class AttentionDecodingBase:
             [B, Mkv, Hkv, 1, K], device="cuda", dtype=dtype, requires_grad=bw
         ).expand(-1, -1, -1, Hq // Hkv, -1)
 
-        print(f"---->>>>>loc, q, shape = {self.q.shape}, stride = {self.q.stride()}")
-        print(f"---->>>>>loc, k, shape = {self.k.shape}, stride = {self.k.stride()}")
-        print(f"---->>>>>loc, v, shape = {self.v.shape}, stride = {self.v.stride()}")
-
         if Hq == Hkv:
             self.q = self.q[:, :, :, 0]
             self.k = self.k[:, :, :, 0]
@@ -175,10 +171,9 @@ class AttentionDecodingBase:
             )
 
             #hard code sequence len to be the same as the
-            # seq_len = torch.full((128, ), 8193, dtype=torch.int32, device='cuda')
-            seq_len = torch.full((128, ), prompt_, dtype=torch.int32, device='cuda')
+            seq_len = torch.full((B, ), Mkv, dtype=torch.int32, device='cuda')
             self.attn_bias.k_seqinfo.seqlen = seq_len
-            self.attn_bias.k_seqinfo.max_seqlen=prompt_
+            self.attn_bias.k_seqinfo.max_seqlen=Mkv
 
             if isinstance(
                 self.attn_bias,
@@ -508,8 +503,6 @@ class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
         )
         self.k_fp8 = _to_expanded_shape(k_fp8)
         self.v_fp8 = _to_expanded_shape(v_fp8)
-        print(f"benchmark, k_scale_shape = {self.v_fp8_scales_shifts.shape}, stride = {self.v_fp8_scales_shifts.stride()}")
-        print(f"benchmark, k_shape = {self.v_fp8.shape}, stride = {self.v_fp8.stride()}")
 
         self.attn_bias = None
         if attn_bias_type is not None:
@@ -528,10 +521,9 @@ class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
             )
 
             #hard code sequence len to be the same as the
-            # seq_len = torch.full((128, ), 8193, dtype=torch.int32, device='cuda')
-            seq_len = torch.full((128, ), prompt_, dtype=torch.int32, device='cuda')
+            seq_len = torch.full((B, ), Mkv, dtype=torch.int32, device='cuda')
             self.attn_bias.k_seqinfo.seqlen = seq_len
-            self.attn_bias.k_seqinfo.max_seqlen=prompt_
+            self.attn_bias.k_seqinfo.max_seqlen=Mkv
 
     def get_inputs(self):
         inp = InputsFp8(
@@ -593,8 +585,6 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
         v_fp8, v_fp8_scales, v_fp8_shifts = quantize_fp8_asymmetric(
             self.v.view(-1, K), pt_fp8_dtype=pt_fp8_dtype
         )
-        # print(f"v_input = {v_fp8.to(torch.bfloat16)}")
-
         k_fp8_packed, v_fp8_packed = k_fp8.view(torch.int32), v_fp8.view(torch.int32)
 
         def _to_expanded_shape(x):
@@ -622,8 +612,6 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
         self.v_fp8_scales_shifts_packed = (
             _to_expanded_shape(v_fp8_scales_shifts_packed).squeeze(-1).contiguous()
         )
-        print(f"benchmark fp8 packed, k_scale_shape = {self.k_fp8_scales_shifts_packed.shape}, stride = {self.k_fp8_scales_shifts_packed.stride()}")
-        print(f"benchmark fp8 packed, k_shape = {self.k_fp8_packed.shape}, stride = {self.k_fp8_packed.stride()}")
 
         self.attn_bias = None
         if attn_bias_type is not None:
@@ -642,10 +630,9 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
             )
 
             #hard code sequence len to be the same as the
-            # seq_len = torch.full((128, ), 8193, dtype=torch.int32, device='cuda')
-            seq_len = torch.full((128, ), prompt_, dtype=torch.int32, device='cuda')
+            seq_len = torch.full((B, ), Mkv, dtype=torch.int32, device='cuda')
             self.attn_bias.k_seqinfo.seqlen = seq_len
-            self.attn_bias.k_seqinfo.max_seqlen=prompt_
+            self.attn_bias.k_seqinfo.max_seqlen=Mkv
 
     def get_inputs(self):
         inp = InputsFp8(
@@ -675,10 +662,6 @@ class AttentionDecodingPyTorchRepeat(AttentionDecodingBase):
         k = self.k.reshape([B, Mkv, -1, K]).permute(0, 2, 1, 3)
         v = self.v.reshape([B, Mkv, -1, K]).permute(0, 2, 1, 3)
 
-        print(f"loc0, q, shape = {q.shape}, stride = {q.stride()}")
-        print(f"loc0, k, shape = {k.shape}, stride = {k.stride()}")
-        print(f"loc0, v, shape = {v.shape}, stride = {v.stride()}")
-
         attn = (q @ k.transpose(-1, -2) * scale).softmax(-1)
         return attn @ v
 
@@ -695,7 +678,7 @@ if torch.version.cuda:
 if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
     BENCHMARKS["triton_splitK"] = AttentionDecodingSplitKV
     # BENCHMARKS["packed_fp8"] = AttentionDecodingSplitPackedFp8KV
-    # BENCHMARKS["fp8"] = AttentionDecodingSplitFp8KV
+    BENCHMARKS["fp8"] = AttentionDecodingSplitFp8KV
     # BENCHMARKS["triton_int4KV"] = AttentionDecodingSplitInt4KV
 
 try:
@@ -786,30 +769,25 @@ def test_flash_attention_decoder(name, case):
         pytest.skip("ck-decoder does not support Mkv >= 16K")
 
     baseline_out = baseline.fw()
-    print(f"loc----01, baseline_out = {baseline_out.shape}")
     inputs = baseline.get_inputs()
     decoder = BENCHMARKS[name]
 
     assert name in ["ck_splitK", "ck", "triton_splitK", "triton_int4KV", "packed_fp8", "fp8"]
     decoder_output, ctx = decoder.OP.apply(inputs, False)
-    print(f"loc----03, baseline_out = {decoder_output.shape}")
 
     q, k, v = inputs.get_qkv_in_bmghk()
     B, M, G, H, Kq = q.shape
     mqa_swap_seqlen_head = False
     if k.shape[3] > 1 and k.stride(3) == 0 and v.stride(3) == 0:
         mqa_swap_seqlen_head = True
-    print(f"mqa_swap_seqlen_head = {mqa_swap_seqlen_head}")
     if mqa_swap_seqlen_head:
         decoder_output = (
             decoder_output.reshape(B, -1, M, Kq).transpose(1, 2).contiguous()
         )
-        print(f"loc----04, baseline_out = {decoder_output.shape}")
     else:
         decoder_output = decoder_output.reshape(B, H * G, -1, Kq).contiguous()
 
     decoder_output = decoder_output.transpose(2, 1).contiguous()
-    print(f"loc----05, baseline_out = {decoder_output.shape}")
     
     torch.testing.assert_close(decoder_output, baseline_out, atol=1e-3, rtol=0.0001)
 
