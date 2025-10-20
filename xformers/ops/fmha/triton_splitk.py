@@ -766,11 +766,8 @@ class FwOp(AttentionFwOpBase):
             k = k[:, :, :, :1]
             v = v[:, :, :, :1]
             if k_fp8_scale_shift is not None and v_fp8_scale_shift is not None:
-                if IS_PACKED:
-                    k_fp8_scale_shift = k_fp8_scale_shift[:, :, :, :1]
-                    v_fp8_scale_shift = v_fp8_scale_shift[:, :, :, :1]
-                    k_fp8_scale_shift = k_fp8_scale_shift[:, :, :, :1]
-                    v_fp8_scale_shift = v_fp8_scale_shift[:, :, :, :1]
+                k_fp8_scale_shift = k_fp8_scale_shift[:, :, :, :1]
+                v_fp8_scale_shift = v_fp8_scale_shift[:, :, :, :1]
 
         if k.dtype == torch.int32:
             if k_fp8_scale_shift is not None:
