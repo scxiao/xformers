@@ -115,6 +115,7 @@ def _fwd_kernel_splitK(
     HAS_ADDITIVE_BIAS: tl.constexpr,
     NUM_PROGRAMS_DIM2_CONST: tl.constexpr,
     IS_HIP: tl.constexpr,
+    USE_TL_SWIZZLE: tl.constexpr,
 ):
     tl.assume(stride_qz > 0)
     tl.assume(stride_qm > 0)
@@ -188,13 +189,17 @@ def _fwd_kernel_splitK(
     PACKED_D_PER_GROUP: tl.constexpr = BLOCK_DMODEL // PACKED_PER_VAL // N_GROUPS
     D_PER_GROUP: tl.constexpr = BLOCK_DMODEL // N_GROUPS
 
-    start_m = tl.program_id(0)
+    splitk_idx = tl.program_id(0)
     off_zhg = tl.program_id(1)
+    start_m = tl.program_id(2)
+
+    if USE_TL_SWIZZLE:
+        splitk_idx, off_zhg = tl.swizzle2d(splitk_idx, off_zhg, tl.num_programs(1), tl.num_programs(1), tl.num_programs(0))
+
     off_z = off_zhg // (H * G)
     off_hg = off_zhg % (H * G)
     off_h = off_hg // G
     off_g = off_hg % G
-    splitk_idx = tl.program_id(2)
 
     if USE_SEQ_LEN:
         kv_len = tl.load(Seq_len + off_z)
@@ -342,15 +347,6 @@ def _fwd_kernel_splitK(
             else:
                 k_fp8_scale_shift_base += off_z * stride_k_fp8_scale_shift_z
                 v_fp8_scale_shift_base += off_z * stride_v_fp8_scale_shift_z
-            # K_scale_shift_block_ptr = tl.make_block_ptr(
-            #     base=k_fp8_scale_shift_base,
-            #     shape=(hi, 2),
-            #     strides=(stride_k_fp8_scale_shift_n, 1),
-            #     offsets=(lo, 0),
-            #     block_shape=(BLOCK_N, 2),
-            #     order=(1, 0),
-            # )
-
             K_scale_shift_block_ptr = tl.make_block_ptr(
                 base=k_fp8_scale_shift_base,
                 shape=(2, hi),
@@ -513,15 +509,6 @@ def _fwd_kernel_splitK(
                 )
             # use fp8 directly as input
             elif FP8_QUANTIZED:
-                # K_scale_shift_block_ptr = tl.make_block_ptr(
-                #     base=k_fp8_scale_shift_base,
-                #     shape=(offset + current_block_size, 2),
-                #     strides=(stride_k_fp8_scale_shift_n, 1),
-                #     offsets=(offset, 0),
-                #     block_shape=(BLOCK_N, 2),
-                #     order=(1, 0),
-                # )
-
                 K_scale_shift_block_ptr = tl.make_block_ptr(
                     base=k_fp8_scale_shift_base,
                     shape=(2, offset + current_block_size),
@@ -547,21 +534,6 @@ def _fwd_kernel_splitK(
         k: "VAR_ARGS_ARRAY"  # noqa: F821
         v: "VAR_ARGS_ARRAY"  # noqa: F821
         for i in range(len(acc)):  # noqa: F821
-            # k[i], v[i] = load_dequantize_k_v_group(  # noqa: F821
-            #     K_block_ptr,
-            #     V_block_ptr,
-            #     K_scale_shift_block_ptr,
-            #     V_scale_shift_block_ptr,
-            #     BOUNDS_CHECKS_N,
-            #     PACKED_PER_VAL,
-            #     PACKED_D_PER_GROUP,
-            #     FP8_QUANTIZED,
-            #     IS_PACKED,
-            #     Q.dtype.element_ty,
-            #     i,
-            #     IS_HIP,
-            # )
-
             k[i] = load_dequantize_k_group(  # noqa: F821
                 K_block_ptr,
                 K_scale_shift_block_ptr,
@@ -1051,15 +1023,6 @@ def cast_uint32_to_half2(scale_shift):
     shift = shift.to(tl.uint16).to(tl.float16, bitcast=True)
     return scale, shift
 
-@triton.jit
-def cast_uint32_to_float(scale_shift):
-    """Extract two float16 packed into one int32"""
-    scale = scale_shift & 0xFFFF
-    shift = scale_shift >> 16
-    scale = scale.to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
-    shift = shift.to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
-    return scale, shift
-
 
 @triton.jit
 def cast_uint32_to_float(scale_shift):
@@ -1097,7 +1060,14 @@ def dequantize_k_hip(
 
     if PACKED_PER_VAL == 4:
         # FP8 quantization.
-        fp8_type = tl.float8e4b8 if (torch.version.hip is not None and triton.runtime.driver.active.get_current_target().arch == 'gfx942') else tl.float8e4nv
+        fp8_type = (
+            tl.float8e4b8
+            if (
+                torch.version.hip is not None
+                and triton.runtime.driver.active.get_current_target().arch == "gfx942"
+            )
+            else tl.float8e4nv
+        )
         dequant = (
             quant_offset.to(tl.uint8).to(fp8_type, bitcast=True).to(scale.dtype) * scale
             + shift
@@ -1145,7 +1115,14 @@ def dequantize(
     )
     if PACKED_PER_VAL == 4:
         # FP8 quantization.
-        fp8_type = tl.float8e4b8 if (torch.version.hip is not None and triton.runtime.driver.active.get_current_target().arch == 'gfx942') else tl.float8e4nv
+        fp8_type = (
+            tl.float8e4b8
+            if (
+                torch.version.hip is not None
+                and triton.runtime.driver.active.get_current_target().arch == "gfx942"
+            )
+            else tl.float8e4nv
+        )
         dequant = (
             quant_offset.to(tl.uint8).to(fp8_type, bitcast=True).to(scale.dtype) * scale
             + shift

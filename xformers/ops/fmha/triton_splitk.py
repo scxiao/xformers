@@ -335,7 +335,15 @@ class FwOp(AttentionFwOpBase):
 
     @classmethod
     def get_split_k(
-        cls, B: int, G: int, H: int, Mk: int, Mq: int, page_size: int, is_paged=False, is_fp8 = False,
+        cls,
+        B: int,
+        G: int,
+        H: int,
+        Mk: int,
+        Mq: int,
+        page_size: int,
+        is_paged=False,
+        is_fp8=False,
     ) -> int:
         """Heuristic for the number of splits"""
         bh = max(B * H, 1)  # NOTE: Handle B*h=0 case
@@ -644,7 +652,9 @@ class FwOp(AttentionFwOpBase):
             return out, None
 
         k_fp8_scale_shift, v_fp8_scale_shift = cls.get_fp8_scale_shift(inp)
-        IS_PACKED = (k_fp8_scale_shift is not None) and (k_fp8_scale_shift.dtype == torch.int32)
+        IS_PACKED = (k_fp8_scale_shift is not None) and (
+            k_fp8_scale_shift.dtype == torch.int32
+        )
 
         if not isinstance(inp.attn_bias, torch.Tensor):
             attn_bias_tensor = None
@@ -861,7 +871,7 @@ class FwOp(AttentionFwOpBase):
         def grid(META):
             import triton
 
-            return triton.cdiv(M, META["BLOCK_M"]), B * G * H, split_k
+            return split_k, B * G * H, triton.cdiv(M, META["BLOCK_M"])
 
         split_size = (Mk + split_k - 1) // split_k
 
@@ -880,29 +890,9 @@ class FwOp(AttentionFwOpBase):
             k_fp8_scale_shift=k_fp8_scale_shift,
         )
 
-        if _is_triton_available():
-            # Triton 3.3.1+fb is required for AMD specific changes to
-            # improve performance.
-            # TODO: Remove once the triton update lands everywhere.
-            import triton
-
-            IS_TRITON_UPGRADE = triton.__version__ == "3.3.1+fb"
-        else:
-            IS_TRITON_UPGRADE = False
         IS_HIP = torch.version.hip is not None
-
-        # print(f"B = {B}, H = {H}, G = {G}, split_k = {split_k}, split_size = {split_size}")
-        # print(f"extra_args = {extra_args}")
-        # print(f"q, shape = {q.shape}, stride = {q.stride()}")
-        # print(f"k, shape = {k.shape}, stride = {k.stride()}")
-        # print(f"v, shape = {v.shape}, stride = {v.stride()}")
-        # print(f"k_scale_shift, shape = {k_fp8_scale_shift.shape}, stride = {k_fp8_scale_shift.stride()}")
-        # print(f"v_scale_shift, shape = {v_fp8_scale_shift.shape}, stride = {v_fp8_scale_shift.stride()}")
-        # print(f"triton, q = {q[0][0]}")
-        # print(f"triton, k = {k[0][0]}")
-        # print(f"triton, v = {v[0][0]}")
-        # print(f"k_fp8_scale_shift = {k_fp8_scale_shift[0][0]}")
-        # print(f"v_fp8_scale_shift = {v_fp8_scale_shift[0][0]}")
+        USE_TL_SWIZZLE = ((B * G * H) % split_k) == 0
+        print(f"split_k = {split_k}, B = {B}, G = {G}, H = {H}, USE_TL_SWIZZLE = {USE_TL_SWIZZLE}")
 
         kernel[grid](
             Q=q,
@@ -967,6 +957,7 @@ class FwOp(AttentionFwOpBase):
             HAS_ADDITIVE_BIAS=attn_bias_tensor is not None,
             NUM_PROGRAMS_DIM2_CONST=split_k,
             IS_HIP=IS_HIP,
+            USE_TL_SWIZZLE=USE_TL_SWIZZLE,
             **extra_args,
         )
         if not IS_SPLITK:

@@ -22,8 +22,9 @@ min_run_time = 0.5
 device = torch.device("cuda")
 
 prompt_ = 32769
-#prompt_ = 8193
+# prompt_ = 8193
 
+pt_fp8_dtype = torch.float8_e4m3fn
 
 CASES = [
     # dict(
@@ -38,20 +39,10 @@ CASES = [
     # for i in range(8, 18)
     # for hkv in (1, 2)
 
-    # dict(
-    #     B=128,
-    #     Mq=1,
-    #     Mkv=32769,
-    #     Hq=8,
-    #     Hkv=1,
-    #     K=128,
-    #     attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-    #     # attn_bias_type=None,
-    # ),
     dict(
         B=128,
         Mq=1,
-        Mkv=8193,
+        Mkv=32769,
         Hq=8,
         Hkv=1,
         K=128,
@@ -61,17 +52,13 @@ CASES = [
     # dict(
     #     B=128,
     #     Mq=1,
-    #     Mkv=8192,
+    #     Mkv=8193,
     #     Hq=8,
     #     Hkv=1,
     #     K=128,
-    #     # attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-    #     attn_bias_type=None,
-    # )
-
-    # for i in range(8, 18)
-    # for hkv in (1, 2)
-
+    #     attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    #     # attn_bias_type=None,
+    # ),
 ]
 
 
@@ -140,10 +127,13 @@ class AttentionDecodingBase:
         )
         self.k = torch.randn(
             [B, Mkv, Hkv, 1, K], device="cuda", dtype=dtype, requires_grad=bw
-        ).expand(-1, -1, -1, Hq // Hkv, -1)
+        )
+        self.k = self.k.expand(-1, -1, -1, Hq // Hkv, -1)
+
         self.v = torch.randn(
             [B, Mkv, Hkv, 1, K], device="cuda", dtype=dtype, requires_grad=bw
-        ).expand(-1, -1, -1, Hq // Hkv, -1)
+        )
+        self.v = self.v.expand(-1, -1, -1, Hq // Hkv, -1)
 
         if Hq == Hkv:
             self.q = self.q[:, :, :, 0]
@@ -171,6 +161,7 @@ class AttentionDecodingBase:
             )
 
             #hard code sequence len to be the same as the
+            # seq_len = torch.full((128, ), 8193, dtype=torch.int32, device='cuda')
             seq_len = torch.full((B, ), Mkv, dtype=torch.int32, device='cuda')
             self.attn_bias.k_seqinfo.seqlen = seq_len
             self.attn_bias.k_seqinfo.max_seqlen=Mkv
@@ -464,8 +455,6 @@ class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
         self.k = torch.randn(1, B * max_context_length, Hkv, 1, K, dtype=dtype, device=device)
         self.v = torch.randn(1, B * max_context_length, Hkv, 1, K, dtype=dtype, device=device)
 
-
-        pt_fp8_dtype = torch.float8_e4m3fn
         k_fp8, k_fp8_scales, k_fp8_shifts = quantize_fp8_asymmetric(
             self.k.view(-1, K), pt_fp8_dtype=pt_fp8_dtype
         )
@@ -488,6 +477,7 @@ class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
         # for fp8 direct input. kv are of the fp8 data type, while scale and shift are of
         # fp16 data type, and concated as one input
         k_fp8_scales_shifts = _combine_scale_shift(k_fp8_scales, k_fp8_shifts)
+
         v_fp8_scales_shifts = _combine_scale_shift(v_fp8_scales, v_fp8_shifts)
 
         def _to_expanded_shape(x):
@@ -496,10 +486,10 @@ class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
             )
 
         self.k_fp8_scales_shifts = (
-            _to_expanded_shape(k_fp8_scales_shifts).squeeze(-1).contiguous()
+            _to_expanded_shape(k_fp8_scales_shifts).squeeze(-1)
         )
         self.v_fp8_scales_shifts = (
-            _to_expanded_shape(v_fp8_scales_shifts).squeeze(-1).contiguous()
+            _to_expanded_shape(v_fp8_scales_shifts).squeeze(-1)
         )
         self.k_fp8 = _to_expanded_shape(k_fp8)
         self.v_fp8 = _to_expanded_shape(v_fp8)
@@ -607,10 +597,10 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
         v_fp8_scales_shifts_packed = _combine_scale_shift_packed(v_fp8_scales, v_fp8_shifts)
 
         self.k_fp8_scales_shifts_packed = (
-            _to_expanded_shape(k_fp8_scales_shifts_packed).squeeze(-1)
+            _to_expanded_shape(k_fp8_scales_shifts_packed).squeeze(-1).contiguous()
         )
         self.v_fp8_scales_shifts_packed = (
-            _to_expanded_shape(v_fp8_scales_shifts_packed).squeeze(-1)
+            _to_expanded_shape(v_fp8_scales_shifts_packed).squeeze(-1).contiguous()
         )
 
         self.attn_bias = None
@@ -654,6 +644,23 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
             print(f"Runtime error: {e}")
 
 
+def quant_dequantization(val, K):
+    dtype = val.dtype
+    val_shape = val.shape
+    # val = val.contiguous()
+    val_fp8, val_fp8_scales, val_fp8_shifts = quantize_fp8_asymmetric(
+        val.reshape(-1, K), pt_fp8_dtype=pt_fp8_dtype
+    )
+
+    scale_shift_shape = val_shape[:-1]
+    val_f32 = val_fp8.view(val_shape).to(torch.float32)
+    scale_f32 = val_fp8_scales.view(scale_shift_shape).to(torch.float32)
+    shift_f32 = val_fp8_shifts.view(scale_shift_shape).to(torch.float32)
+
+    ret = val_f32 * scale_f32.unsqueeze(-1) + shift_f32.unsqueeze(-1)
+    return ret.to(dtype)
+
+
 class AttentionDecodingPyTorchRepeat(AttentionDecodingBase):
     def fw(self) -> None:
         B, Mq, Mkv, Hq, Hkv, K = self.shapes
@@ -662,6 +669,8 @@ class AttentionDecodingPyTorchRepeat(AttentionDecodingBase):
         k = self.k.reshape([B, Mkv, -1, K]).permute(0, 2, 1, 3)
         v = self.v.reshape([B, Mkv, -1, K]).permute(0, 2, 1, 3)
 
+        k = quant_dequantization(k, K)
+        v = quant_dequantization(v, K)
         attn = (q @ k.transpose(-1, -2) * scale).softmax(-1)
         return attn @ v
 
@@ -702,6 +711,50 @@ except ImportError:
     pass
 
 
+def dequantization(inp, B, Mq, Mkv, Hq, Hkv, K):
+    q = inp.query
+    k_fp8 = inp.key
+    v_fp8 = inp.value
+    q = q.reshape([B, Mq, -1, K]).permute(0, 2, 1, 3).contiguous()
+
+    k_fp8 = k_fp8.reshape([B, Mkv, -1, K]).permute(0, 2, 1, 3)
+    k_f32 = k_fp8.to(torch.float32).contiguous()
+
+    k_fp8_scale_shift = inp.k_fp8_scale_shift
+    k_scale_f32 = k_fp8_scale_shift[:,:,:,:,0].to(torch.float32)
+    k_scale_f32 = k_scale_f32.reshape([B, Mkv, -1, 1]).permute(0, 2, 1, 3).contiguous()
+    k_shift_f32 = k_fp8_scale_shift[:,:,:,:,1].to(torch.float32)
+    k_shift_f32 = k_shift_f32.reshape([B, Mkv, -1, 1]).permute(0, 2, 1, 3).contiguous()
+
+    k = k_f32 * k_scale_f32 + k_shift_f32
+    # k = k.to(q.dtype)
+
+    v_fp8_scale_shift = inp.v_fp8_scale_shift
+    v_scale_f32 = v_fp8_scale_shift[:,:,:,:,0].to(torch.float32)
+    v_scale_f32 = v_scale_f32.reshape([B, Mkv, -1, 1]).permute(0, 2, 1, 3)
+
+    v_shift_f32 = v_fp8_scale_shift[:,:,:,:,1].to(torch.float32)
+    v_shift_f32 = v_shift_f32.reshape([B, Mkv, -1, 1]).permute(0, 2, 1, 3)
+
+    v_fp8 = v_fp8.reshape([B, Mkv, -1, K]).permute(0, 2, 1, 3)
+    v_f32 = v_fp8.to(torch.float32).contiguous()
+
+    v = v_f32 * v_scale_f32 + v_shift_f32
+    # v = v.to(q.dtype)
+
+    return q, k, v
+
+
+def attention_naive(inp, B, Mq, Mkv, Hq, Hkv, K):
+
+    q, k, v = dequantization(inp, B, Mq, Mkv, Hq, Hkv, K)
+
+    scale = 1 / K**0.5
+    attn = (q.to(torch.float32) @ k.transpose(-1, -2) * scale).softmax(-1)
+
+    return (attn @ v).to(q.dtype)
+
+
 TEST_CASES = [
     dict(
         B=max(1, 2 ** (16 - i)),
@@ -720,16 +773,16 @@ TEST_CASES = [
 ]
 
 TEST_CASES = [
-    # dict(
-    #     B=128,
-    #     Mq=1,
-    #     Mkv=32769,
-    #     Hq=8,
-    #     Hkv=1,
-    #     K=128,
-    #     # attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-    #     attn_bias_type=None,
-    # ),
+    dict(
+        B=128,
+        Mq=1,
+        Mkv=32769,
+        Hq=8,
+        Hkv=1,
+        K=128,
+        attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        # attn_bias_type=None,
+    ),
     dict(
         B=128,
         Mq=1,
@@ -737,11 +790,10 @@ TEST_CASES = [
         Hq=8,
         Hkv=1,
         K=128,
-        # attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-        attn_bias_type=None,
+        attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        # attn_bias_type=None,
     ),
 ]
-
 
 def get_benchmark_names():
     decoder_names = list(BENCHMARKS.keys())
@@ -755,7 +807,9 @@ def get_benchmark_names():
     [(name, case) for name in get_benchmark_names() for case in TEST_CASES],
 )
 def test_flash_attention_decoder(name, case):
-    baseline = AttentionDecodingPyTorchRepeat(
+    if name == "ck-decoder" and case["Mkv"] >= 2**14:
+        pytest.skip("ck-decoder does not support Mkv >= 16K")
+    decoder = BENCHMARKS[name](
         case["B"],
         case["Mq"],
         case["Mkv"],
@@ -765,31 +819,29 @@ def test_flash_attention_decoder(name, case):
         False,
         case["attn_bias_type"],
     )
-    if name == "ck-decoder" and case["Mkv"] >= 2**14:
-        pytest.skip("ck-decoder does not support Mkv >= 16K")
-
-    baseline_out = baseline.fw()
-    inputs = baseline.get_inputs()
-    decoder = BENCHMARKS[name]
+    inputs = decoder.get_inputs()
 
     assert name in ["ck_splitK", "ck", "triton_splitK", "triton_int4KV", "packed_fp8", "fp8"]
     decoder_output, ctx = decoder.OP.apply(inputs, False)
 
-    q, k, v = inputs.get_qkv_in_bmghk()
-    B, M, G, H, Kq = q.shape
+    # compute baseline using fp8 inputs to avoid the quanti/dequatnization error
+    naive_output = attention_naive(inputs, case["B"], case["Mq"], case["Mkv"], case["Hq"], case["Hkv"], case["K"])
+    k = inputs.key
+    v = inputs.value
+    q = inputs.query
+    M, B, G, H, Kq = q.shape
+
     mqa_swap_seqlen_head = False
     if k.shape[3] > 1 and k.stride(3) == 0 and v.stride(3) == 0:
         mqa_swap_seqlen_head = True
     if mqa_swap_seqlen_head:
         decoder_output = (
-            decoder_output.reshape(B, -1, M, Kq).transpose(1, 2).contiguous()
+            decoder_output.reshape(B, -1, M * G, Kq).transpose(1, 2).contiguous()
         )
     else:
         decoder_output = decoder_output.reshape(B, H * G, -1, Kq).contiguous()
-
     decoder_output = decoder_output.transpose(2, 1).contiguous()
-    
-    torch.testing.assert_close(decoder_output, baseline_out, atol=1e-3, rtol=0.0001)
+    torch.testing.assert_close(decoder_output, naive_output, atol=5e-4, rtol=0.000)
 
 
 def main() -> None:
@@ -799,7 +851,7 @@ def main() -> None:
     benchmark_main_helper2(
         "attn_decoding",
         fw=True,
-        cases=[CASES[0]],
+        cases=CASES,
         functions=BENCHMARKS,
         min_run_time=min_run_time,
     )
