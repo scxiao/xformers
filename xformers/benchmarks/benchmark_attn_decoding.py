@@ -38,16 +38,16 @@ CASES = [
     # for i in range(8, 18)
     # for hkv in (1, 2)
 
-    # dict(
-    #     B=128,
-    #     Mq=1,
-    #     Mkv=32769,
-    #     Hq=8,
-    #     Hkv=1,
-    #     K=128,
-    #     attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-    #     # attn_bias_type=None,
-    # ),
+    dict(
+        B=128,
+        Mq=1,
+        Mkv=32769,
+        Hq=8,
+        Hkv=1,
+        K=128,
+        attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        # attn_bias_type=None,
+    ),
     dict(
         B=128,
         Mq=1,
@@ -58,21 +58,50 @@ CASES = [
         attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
         # attn_bias_type=None,
     ),
+
     # dict(
     #     B=128,
     #     Mq=1,
-    #     Mkv=8192,
-    #     Hq=8,
+    #     Mkv=32769,
+    #     Hq=15,
     #     Hkv=1,
     #     K=128,
-    #     # attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-    #     attn_bias_type=None,
-    # )
-
-    # for i in range(8, 18)
-    # for hkv in (1, 2)
+    #     attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    #     # attn_bias_type=None,
+    # ),
+    # dict(
+    #     B=128,
+    #     Mq=1,
+    #     Mkv=8193,
+    #     Hq=15,
+    #     Hkv=1,
+    #     K=128,
+    #     attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    #     # attn_bias_type=None,
+    # ),
+    # dict(
+    #     B=32,
+    #     Mq=1,
+    #     Mkv=32769,
+    #     Hq=15,
+    #     Hkv=1,
+    #     K=128,
+    #     attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    #     # attn_bias_type=None,
+    # ),
+    # dict(
+    #     B=32,
+    #     Mq=1,
+    #     Mkv=8193,
+    #     Hq=15,
+    #     Hkv=1,
+    #     K=128,
+    #     attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    #     # attn_bias_type=None,
+    # ),
 
 ]
+
 
 
 def quantize_kv_int4(k: torch.Tensor, num_groups: int = 1) -> torch.Tensor:
@@ -496,10 +525,10 @@ class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
             )
 
         self.k_fp8_scales_shifts = (
-            _to_expanded_shape(k_fp8_scales_shifts).squeeze(-1).contiguous()
+            _to_expanded_shape(k_fp8_scales_shifts).squeeze(-1)
         )
         self.v_fp8_scales_shifts = (
-            _to_expanded_shape(v_fp8_scales_shifts).squeeze(-1).contiguous()
+            _to_expanded_shape(v_fp8_scales_shifts).squeeze(-1)
         )
         self.k_fp8 = _to_expanded_shape(k_fp8)
         self.v_fp8 = _to_expanded_shape(v_fp8)
@@ -799,7 +828,7 @@ def main() -> None:
     benchmark_main_helper2(
         "attn_decoding",
         fw=True,
-        cases=[CASES[0]],
+        cases=CASES,
         functions=BENCHMARKS,
         min_run_time=min_run_time,
     )

@@ -49,16 +49,16 @@ CASES = [
         attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
         # attn_bias_type=None,
     ),
-    # dict(
-    #     B=128,
-    #     Mq=1,
-    #     Mkv=8193,
-    #     Hq=8,
-    #     Hkv=1,
-    #     K=128,
-    #     attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-    #     # attn_bias_type=None,
-    # ),
+    dict(
+        B=128,
+        Mq=1,
+        Mkv=8193,
+        Hq=8,
+        Hkv=1,
+        K=128,
+        attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        # attn_bias_type=None,
+    ),
 ]
 
 
