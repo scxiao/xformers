@@ -22,18 +22,6 @@ min_run_time = 0.5
 device = torch.device("cuda")
 
 CASES = [
-    # dict(
-    #     B=max(1, 2 ** (16 - i)),
-    #     Mq=1,
-    #     Mkv=2**i,
-    #     Hq=16,
-    #     Hkv=hkv,
-    #     K=128,
-    #     attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-    # )
-    # for i in range(8, 18)
-    # for hkv in (1, 2)
-
     dict(
         B=128,
         Mq=1,
@@ -56,6 +44,21 @@ CASES = [
     ),
 ]
 
+MOE_CASES = [
+    dict(
+        B=b,
+        Mq=1,
+        Mkv=mkv,
+        Hq=15,
+        Hkv=1,
+        K=128,
+        attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    )
+    for b in [32, 128]
+    for mkv in [8193, 32769]
+]
+
+CASES += MOE_CASES
 
 def quantize_kv_int4(k: torch.Tensor, num_groups: int = 1) -> torch.Tensor:
     """
