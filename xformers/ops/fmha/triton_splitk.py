@@ -542,7 +542,7 @@ class FwOp(AttentionFwOpBase):
                         elif mkv < 131072:
                             # Note: This isn't benchmarked, but fp8 seems to scale well.
                             BLOCK_N = 64
-                            num_warps = 1
+                            num_warps = 2
                             num_stages = 1
                         else:
                             BLOCK_N = 128
