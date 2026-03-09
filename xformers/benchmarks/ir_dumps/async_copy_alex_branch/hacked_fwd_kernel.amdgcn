@@ -1200,7 +1200,7 @@ _fwd_kernel_splitK:                     ; @_fwd_kernel_splitK
 	.loc	3 1029 17                       ; splitk_kernels.py:1029:17 @[ <unroll_varargs-_fwd_kernel_splitK-unroll-1>:164:185 ]
 	v_cvt_scalef32_pk_f32_fp8 v[104:105], v140, 1.0
 	.loc	3 1028 27                       ; splitk_kernels.py:1028:27 @[ <unroll_varargs-_fwd_kernel_splitK-unroll-1>:164:185 ]
-	s_waitcnt vmcnt(0)
+	; s_waitcnt vmcnt(0)
 	ds_write_b32 v92, v48 offset:33024
 	; wave barrier
 	ds_read_b128 v[72:75], v254 offset:33024
@@ -1715,7 +1715,7 @@ _fwd_kernel_splitK:                     ; @_fwd_kernel_splitK
 	v_accvgpr_read_b32 v58, a44
 	v_accvgpr_read_b32 v56, a42
 	.loc	1 139 33                        ; <unroll_varargs-_fwd_kernel_splitK-unroll-1>:139:33
-	; s_waitcnt vmcnt(0)
+	s_waitcnt vmcnt(0)
 	s_cbranch_scc1 .LBB0_4
 ; %bb.5:                                ; %Flow
 	.loc	1 0 33 is_stmt 0                ; <unroll_varargs-_fwd_kernel_splitK-unroll-1>:0:33
